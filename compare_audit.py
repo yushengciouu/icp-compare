@@ -5,15 +5,18 @@ import json
 from bs4 import BeautifulSoup
 import pandas as pd
 from openai import OpenAI
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
-# 1. 初始化 OpenAI 客端，連接您的本地 vLLM (gemma-4:31B)
+# 1. 初始化 OpenAI 客戶端，連接您的本地 vLLM (gemma-4:31B)
 client = OpenAI(
-    base_url="http://192.168.39.143:8001/v1",
+    base_url="http://192.168.39.143:8002/v1",
     api_key="empty_api_key_for_vllm"
 )
 
-# 本地模型 ID
+# 本地模型 ID 與併發限制線程數
 MODEL_NAME = "gemma-4:31B"
+MAX_WORKERS = 64
 
 def clean_text(text):
     if text is None:
@@ -121,7 +124,7 @@ def get_llm_judgment(pair):
 
 請「僅」回覆以下標準的 JSON 格式（不要包含任何前後引導廢話或 markdown 的 ` ```json ` 標記，純 JSON 內容，確保可以被 json.loads 解析）：
 {{
-  "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據...",
+  "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
   "match_level": "High" / "Medium" / "Low" / "False Positive",
   "is_same_entity": true / false
 }}
@@ -147,8 +150,40 @@ def get_llm_judgment(pair):
             else:
                 # 簡單清理
                 clean_json_str = resp_text.replace("```json", "").replace("```", "").strip()
+        
+        # 硬性防禦機制：如果模型在 JSON 中使用了非法的未轉義雙引號
+        # 這邊我們先把常見的 Markdown 程式碼區塊標記徹底移除
+        clean_json_str = clean_json_str.strip()
+        
+        try:
+            judgment = json.loads(clean_json_str)
+        except json.JSONDecodeError:
+            # 進一步容錯：很多時候是 reasoning 的雙引號或者是換行符號問題。
+            # 我們嘗試用更寬鬆的正則表達式把 match_level 與 is_same_entity 撈出來
+            match_level_found = "Uncertain"
+            is_same_found = False
+            reasoning_found = "解析失敗，改由正則提取"
+            
+            lvl_match = re.search(r'"match_level"\s*:\s*"([^"]+)"', clean_json_str, re.I)
+            same_match = re.search(r'"is_same_entity"\s*:\s*(true|false)', clean_json_str, re.I)
+            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|is_same_entity)"', clean_json_str, re.DOTALL | re.I)
+            
+            if lvl_match:
+                match_level_found = lvl_match.group(1)
+            if same_match:
+                is_same_found = same_match.group(1).lower() == "true"
+            if reason_match:
+                reasoning_found = reason_match.group(1).replace('\\"', '"').replace('\n', ' ')
+            else:
+                # 如果無法定位 reasoning 的結尾，就用原本的內容
+                reasoning_found = f"原始生成：{resp_text}"
                 
-        judgment = json.loads(clean_json_str)
+            judgment = {
+                "reasoning": reasoning_found,
+                "match_level": match_level_found,
+                "is_same_entity": is_same_found
+            }
+            
         return judgment
     except Exception as e:
         print(f"呼叫 LLM 發生錯誤: {e}. 原始回覆: {resp_text if 'resp_text' in locals() else ''}")
@@ -157,6 +192,29 @@ def get_llm_judgment(pair):
             "match_level": "Uncertain",
             "is_same_entity": False
         }
+
+def process_single_pair(pair, idx, total_count):
+    """
+    包裝單筆比對任務，用於多執行緒併發處理。
+    """
+    judgment = get_llm_judgment(pair)
+    item = {
+        "來源檔案": pair["source_file"],
+        "條件ID": pair["condition_id"],
+        "查詢名稱": pair["query_name"],
+        "查詢國家": pair["query_country"],
+        "查詢城市": pair["query_city"],
+        "查詢地址": pair["query_address"],
+        "黑名單ID": pair["party_id"],
+        "黑名單名稱": pair["party_name"],
+        "黑名單地址": pair["party_address"],
+        "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
+        "原XML命中率": f"{pair['xml_percentage']}%",
+        "LLM研判等級": judgment.get("match_level", "Uncertain"),
+        "LLM判定是否同實體": "是" if judgment.get("is_same_entity") else "否",
+        "LLM分析推理理由": judgment.get("reasoning", "無描述")
+    }
+    return item
 
 def main():
     xml_files = glob.glob("testfile/*_raw.xml")
@@ -181,40 +239,33 @@ def main():
         print("非常安全！所有查詢結果中均無大於或等於 75% 的黑名單結果，無需進入 LLM 審判。")
         return
         
-    print("現在啟動本地 LLM gemma-4:31B 進行深度逐筆合規審查...")
+    print(f"現在啟動本地 LLM gemma-4:31B 進行平行（可配置 concurrent={MAX_WORKERS}）深度合規審查...")
     
     audit_results = []
     
-    for idx, pair in enumerate(all_pairs, 1):
-        print(f"[{idx}/{total_count}] 正在對比: XML={pair['xml_percentage']}% | 查詢={pair['query_name']} vs 黑名單={pair['party_name']}")
-        judgment = get_llm_judgment(pair)
+    # 2. 多執行緒併發處理 (使用 ThreadPoolExecutor 並配置 tqdm 進度條)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(process_single_pair, pair, idx, total_count): idx for idx, pair in enumerate(all_pairs, 1)}
         
-        # 整合資料
-        item = {
-            "來源檔案": pair["source_file"],
-            "條件ID": pair["condition_id"],
-            "查詢名稱": pair["query_name"],
-            "查詢國家": pair["query_country"],
-            "查詢城市": pair["query_city"],
-            "查詢地址": pair["query_address"],
-            "黑名單ID": pair["party_id"],
-            "黑名單名稱": pair["party_name"],
-            "黑名單地址": pair["party_address"],
-            "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
-            "原XML命中率": f"{pair['xml_percentage']}%",
-            "LLM研判等級": judgment.get("match_level", "Uncertain"),
-            "LLM判定是否同實體": "是" if judgment.get("is_same_entity") else "否",
-            "LLM分析推理理由": judgment.get("reasoning", "無描述")
-        }
-        audit_results.append(item)
+        for future in tqdm(as_completed(futures), total=total_count, desc="LLM Auditing Progress", unit="pairs"):
+            try:
+                item = future.result()
+                audit_results.append(item)
+            except Exception as e:
+                print(f"處理 Future 發生嚴重錯誤: {e}")
         
-    # 3. 輸出成 Excel 報表
+    # 3. 輸出成 Excel 報表 (每次產生包含時間戳記的全新檔案，完美避開 PermissionError)
     df = pd.DataFrame(audit_results)
-    output_excel = "ICP_Audit_Report.xlsx"
-    df.to_excel(output_excel, index=False)
     
-    print(f"\n審計完成！")
-    print(f"結果已成功輸出至: {os.path.abspath(output_excel)}")
+    import datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_excel = f"ICP_Audit_Report_{timestamp}.xlsx"
+    
+    try:
+        df.to_excel(output_excel, index=False)
+        print(f"\n✅ 審計完成！最新結果已成功輸出至全新檔案: {os.path.abspath(output_excel)}")
+    except Exception as e:
+        print(f"❌ 儲存 Excel 時發生非預期錯誤: {e}")
     
     # 4. 列出統計摘要
     print("\n========= 審計結果統計摘要 =========")
