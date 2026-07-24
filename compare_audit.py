@@ -117,23 +117,25 @@ def get_llm_judgment(pair):
    - 檢查黑名單 Detail (Content) 中是否有列出 alias (別名) 或轉投資股權結構，看看查詢原名是否正是其別名之一。
 
 請做出最終的合規審計判定：
-- **High (同一實體 / 高風險轉運)**: 核心名稱完全對上且物理地址高度相符；或是 **名稱不同但出貨地址（ShipTo/物理地址）完全一致**（存在高度轉運/繞道合規風險）。
-- **Medium (關聯企業)**: 核心名稱相同但位於不同國家/分支機構。
+- **High (同一實體 / 高風險轉運)**: 
+  - **兩者均相同**: 核心名稱完全對上，且物理地址高度相符。
+  - **地址相同（名稱不同）**: 核心名稱不同，但出貨地址/物理地址完全一致（存在高度白手套轉運/繞道合規風險）。
+- **Medium (關聯企業)**: 
+  - **名稱相同（地址不同/異地）**: 核心名稱相同，但位於不同國家/城市或分支機構。
+  - **別名/轉投資命中**: 查詢名稱命中黑名單 Detail 中記載的別名(Alias)或轉投資關聯企業。
 - **Low (低風險/懷疑)**: 有些微相似度，但無法判定。
 - **False Positive (確定誤判)**: 字面相似或因共享園區大樓被篩出，但兩者名稱品牌毫不相干，且非同一實體。
 
-並針對風險判定歸類為以下標準化「風險判定依據」(risk_factor)：
-- "兩者均相同" (名稱與物理地址均高度一致)
-- "地址相同（名稱不同）" (出貨/物理地址完全重合，名稱不同，屬高風險轉運)
-- "名稱相同（地址不同/異地）" (名稱一致但位在不同地區/分支機構)
-- "別名/轉投資命中" (名單別名或股權關係對上)
-- "無關鍵重合（共享園區/誤判）" (字面相似或共享園區大樓誤報)
+針對風險判定，僅有 **High** 與 **Medium** 需要歸類「風險判定依據」(risk_factor)，可選標準值如下：
+- 若判定為 **High**，risk_factor 只能是: "兩者均相同" 或 "地址相同（名稱不同）"
+- 若判定為 **Medium**，risk_factor 只能是: "名稱相同（地址不同/異地）" 或 "別名/轉投資命中"
+- 若判定為 **Low** 或 **False Positive**，risk_factor 請直接填寫 "" (空字串，不需要判定依據)
 
 請「僅」回覆以下標準的 JSON 格式（不要包含任何前後引導廢話或 markdown 的 ` ```json ` 標記，純 JSON 內容，確保可以被 json.loads 解析）：
 {{
   "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
   "match_level": "High" / "Medium" / "Low" / "False Positive",
-  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / "無關鍵重合（共享園區/誤判）",
+  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / "",
   "is_same_entity": true / false
 }}
 """
@@ -169,7 +171,7 @@ def get_llm_judgment(pair):
             # 進一步容錯：很多時候是 reasoning 的雙引號或者是換行符號問題。
             # 我們嘗試用更寬鬆的正則表達式把 match_level 與 is_same_entity 撈出來
             match_level_found = "Uncertain"
-            risk_factor_found = "未分類"
+            risk_factor_found = ""
             is_same_found = False
             reasoning_found = "解析失敗，改由正則提取"
             
@@ -203,7 +205,7 @@ def get_llm_judgment(pair):
         return {
             "reasoning": f"解析 LLM 失敗：{str(e)}",
             "match_level": "Uncertain",
-            "risk_factor": "未分類",
+            "risk_factor": "",
             "is_same_entity": False
         }
 
@@ -212,6 +214,15 @@ def process_single_pair(pair, idx, total_count):
     包裝單筆比對任務，用於多執行緒併發處理。
     """
     judgment = get_llm_judgment(pair)
+    match_level = judgment.get("match_level", "Uncertain")
+    raw_risk_factor = judgment.get("risk_factor", "")
+    
+    # 只有 High 與 Medium 才顯示風險判定依據，Low / False Positive / 其他一律為空字串
+    if match_level in ["High", "Medium"]:
+        risk_factor = raw_risk_factor if raw_risk_factor else ""
+    else:
+        risk_factor = ""
+
     item = {
         "來源檔案": pair["source_file"],
         "條件ID": pair["condition_id"],
@@ -224,8 +235,8 @@ def process_single_pair(pair, idx, total_count):
         "黑名單地址": pair["party_address"],
         "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
         "原XML命中率": f"{pair['xml_percentage']}%",
-        "LLM研判等級": judgment.get("match_level", "Uncertain"),
-        "風險判定依據": judgment.get("risk_factor", "未分類"),
+        "LLM研判等級": match_level,
+        "風險判定依據": risk_factor,
         "LLM判定是否同實體": "是" if judgment.get("is_same_entity") else "否",
         "LLM分析推理理由": judgment.get("reasoning", "無描述")
     }
