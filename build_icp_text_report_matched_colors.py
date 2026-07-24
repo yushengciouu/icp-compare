@@ -229,7 +229,7 @@ def build_detail_sheet(ws, headers, records):
     style_range(ws, f"A2:{last_col}{last_row}", color=COLORS["text"], size=10, vertical="top")
 
     wide = {"來源檔案", "查詢名稱", "查詢地址", "黑名單名稱", "黑名單地址", "黑名單完整資訊", "LLM分析推理理由"}
-    narrow = {"條件ID", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "LLM判定是否同實體"}
+    narrow = {"條件ID", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "風險判定依據", "LLM判定是否同實體"}
     for i, header in enumerate(headers, 1):
         letter = get_column_letter(i)
         ws.column_dimensions[letter].width = 38 if header in wide else 16 if header in narrow else 20

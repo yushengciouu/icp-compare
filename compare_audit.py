@@ -122,10 +122,18 @@ def get_llm_judgment(pair):
 - **Low (低風險/懷疑)**: 有些微相似度，但無法判定。
 - **False Positive (確定誤判)**: 字面相似或因共享園區大樓被篩出，但兩者名稱品牌毫不相干，且非同一實體。
 
+並針對風險判定歸類為以下標準化「風險判定依據」(risk_factor)：
+- "兩者均相同" (名稱與物理地址均高度一致)
+- "地址相同（名稱不同）" (出貨/物理地址完全重合，名稱不同，屬高風險轉運)
+- "名稱相同（地址不同/異地）" (名稱一致但位在不同地區/分支機構)
+- "別名/轉投資命中" (名單別名或股權關係對上)
+- "無關鍵重合（共享園區/誤判）" (字面相似或共享園區大樓誤報)
+
 請「僅」回覆以下標準的 JSON 格式（不要包含任何前後引導廢話或 markdown 的 ` ```json ` 標記，純 JSON 內容，確保可以被 json.loads 解析）：
 {{
   "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
   "match_level": "High" / "Medium" / "Low" / "False Positive",
+  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / "無關鍵重合（共享園區/誤判）",
   "is_same_entity": true / false
 }}
 """
@@ -161,15 +169,19 @@ def get_llm_judgment(pair):
             # 進一步容錯：很多時候是 reasoning 的雙引號或者是換行符號問題。
             # 我們嘗試用更寬鬆的正則表達式把 match_level 與 is_same_entity 撈出來
             match_level_found = "Uncertain"
+            risk_factor_found = "未分類"
             is_same_found = False
             reasoning_found = "解析失敗，改由正則提取"
             
             lvl_match = re.search(r'"match_level"\s*:\s*"([^"]+)"', clean_json_str, re.I)
+            rf_match = re.search(r'"risk_factor"\s*:\s*"([^"]+)"', clean_json_str, re.I)
             same_match = re.search(r'"is_same_entity"\s*:\s*(true|false)', clean_json_str, re.I)
-            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|is_same_entity)"', clean_json_str, re.DOTALL | re.I)
+            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|risk_factor|is_same_entity)"', clean_json_str, re.DOTALL | re.I)
             
             if lvl_match:
                 match_level_found = lvl_match.group(1)
+            if rf_match:
+                risk_factor_found = rf_match.group(1)
             if same_match:
                 is_same_found = same_match.group(1).lower() == "true"
             if reason_match:
@@ -181,6 +193,7 @@ def get_llm_judgment(pair):
             judgment = {
                 "reasoning": reasoning_found,
                 "match_level": match_level_found,
+                "risk_factor": risk_factor_found,
                 "is_same_entity": is_same_found
             }
             
@@ -190,6 +203,7 @@ def get_llm_judgment(pair):
         return {
             "reasoning": f"解析 LLM 失敗：{str(e)}",
             "match_level": "Uncertain",
+            "risk_factor": "未分類",
             "is_same_entity": False
         }
 
@@ -211,6 +225,7 @@ def process_single_pair(pair, idx, total_count):
         "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
         "原XML命中率": f"{pair['xml_percentage']}%",
         "LLM研判等級": judgment.get("match_level", "Uncertain"),
+        "風險判定依據": judgment.get("risk_factor", "未分類"),
         "LLM判定是否同實體": "是" if judgment.get("is_same_entity") else "否",
         "LLM分析推理理由": judgment.get("reasoning", "無描述")
     }
