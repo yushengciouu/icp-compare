@@ -63,7 +63,7 @@ def style_range(ws, cell_range: str, **kwargs) -> None:
             style_cell(cell, **kwargs)
 
 def set_card_columns(ws):
-    widths = {"A": 16, "B": 26, "C": 26, "D": 3, "E": 16, "F": 26, "G": 26, "H": 3}
+    widths = {"A": 16, "B": 26, "C": 26, "D": 10, "E": 16, "F": 26, "G": 26, "H": 24}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
 
@@ -373,21 +373,21 @@ def get_llm_judgment(pair):
   - **兩者均相同**: 核心名稱完全對上，且物理地址高度相符。
   - **地址相同（名稱不同）**: 核心名稱不同，但出貨地址/物理地址完全一致（存在高度白手套轉運/繞道合規風險）。
 - **Medium (關聯企業)**: 
-  - **名稱相同（地址不同/異地）**: 核心名稱相同，但位於不同國家/城市或分支機構。
+  - **名稱相同（地址不同）**: 核心名稱相同，但位於不同國家/城市或分支機構。
   - **別名/轉投資命中**: 查詢名稱命中黑名單 Detail 中記載的別名(Alias)或轉投資關聯企業。
 - **Low (低風險/懷疑)**: 有些微相似度，但無法判定。
 - **False Positive (確定誤判)**: 字面相似或因共享園區大樓被篩出，但兩者名稱品牌毫不相干，且非同一實體。
 
 針對風險判定，僅有 **High** 與 **Medium** 需要歸類「風險判定依據」(risk_factor)，可選標準值如下：
 - 若判定為 **High**，risk_factor 只能是: "兩者均相同" 或 "地址相同（名稱不同）"
-- 若判定為 **Medium**，risk_factor 只能是: "名稱相同（地址不同/異地）" 或 "別名/轉投資命中"
+- 若判定為 **Medium**，risk_factor 只能是: "名稱相同（地址不同）" 或 "別名/轉投資命中"
 - 若判定為 **Low** 或 **False Positive**，risk_factor 請直接填寫 "" (空字串，不需要判定依據)
 
 請「僅」回覆以下標準的 JSON 格式（不要包含任何前後引導廢話或 markdown 的 ` ```json ` 標記，純 JSON 內容，確保可以被 json.loads 解析）：
 {{
   "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
   "match_level": "High" / "Medium" / "Low" / "False Positive",
-  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / ""
+  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同）" / "別名/轉投資命中" / ""
 }}
 """
     try:
