@@ -8,10 +8,10 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # ===== 可調整設定 =====
 INPUT_FILE = Path("ICP_Audit_Report_20260707_111225.xlsx")
-OUTPUT_FILE = Path("ICP_Audit_同實體_文字閱讀版_配色一致.xlsx")
+OUTPUT_FILE = Path("ICP_Audit_高風險案件_文字閱讀版_配色一致.xlsx")
 SOURCE_SHEET = "Sheet1"
-FILTER_COLUMN = "LLM判定是否同實體"
-FILTER_VALUE = "是"
+FILTER_COLUMN = "LLM研判等級"
+TARGET_LEVELS = {"High", "Medium"}
 
 # 與原本輸出成品一致的色碼
 COLORS = {
@@ -66,7 +66,7 @@ def read_records(ws):
     idx = headers.index(FILTER_COLUMN)
     records = []
     for row in rows[1:]:
-        if idx < len(row) and str(row[idx]).strip() == FILTER_VALUE:
+        if idx < len(row) and str(row[idx]).strip() in TARGET_LEVELS:
             records.append({h: (row[i] if i < len(row) else None) for i, h in enumerate(headers)})
     return headers, records
 
@@ -82,12 +82,12 @@ def build_reading_sheet(ws, records):
     ws.freeze_panes = "A4"
     set_card_columns(ws)
 
-    merge_write(ws, "A1:H1", "LLM 判定同實體｜案件閱讀版")
+    merge_write(ws, "A1:H1", "LLM 高與中風險案件｜審計閱讀版")
     style_range(ws, "A1:H1", fill=COLORS["navy"], color=COLORS["white"], size=18,
                 bold=True, horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 42
 
-    merge_write(ws, "A2:H2", f"共 {len(records)} 筆｜完整保留所有原始欄位，改以案件卡片方式呈現")
+    merge_write(ws, "A2:H2", f"共 {len(records)} 筆 High/Medium 風險案件｜完整保留所有原始欄位，改以案件卡片方式呈現")
     style_range(ws, "A2:H2", fill=COLORS["pale_blue"], color=COLORS["muted"], size=10,
                 horizontal="left", vertical="center")
     ws.row_dimensions[2].height = 26
@@ -107,7 +107,7 @@ def build_reading_sheet(ws, records):
             ("A", "條件 ID", "B", s(rec.get("條件ID"))),
             ("C", "原 XML 命中率", "D", s(rec.get("原XML命中率"))),
             ("E", "LLM 研判等級", "F", s(rec.get("LLM研判等級"))),
-            ("G", "同實體", "H", s(rec.get("LLM判定是否同實體"))),
+            ("G", "風險判定依據", "H", s(rec.get("風險判定依據"))),
         ]
         for lc, label, vc, value in summary:
             ws[f"{lc}{row}"] = label

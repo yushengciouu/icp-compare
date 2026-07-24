@@ -135,8 +135,7 @@ def get_llm_judgment(pair):
 {{
   "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
   "match_level": "High" / "Medium" / "Low" / "False Positive",
-  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / "",
-  "is_same_entity": true / false
+  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同/異地）" / "別名/轉投資命中" / ""
 }}
 """
     try:
@@ -169,23 +168,19 @@ def get_llm_judgment(pair):
             judgment = json.loads(clean_json_str)
         except json.JSONDecodeError:
             # 進一步容錯：很多時候是 reasoning 的雙引號或者是換行符號問題。
-            # 我們嘗試用更寬鬆的正則表達式把 match_level 與 is_same_entity 撈出來
+            # 我們嘗試用更寬鬆的正則表達式把 match_level 與 risk_factor 撈出來
             match_level_found = "Uncertain"
             risk_factor_found = ""
-            is_same_found = False
             reasoning_found = "解析失敗，改由正則提取"
             
             lvl_match = re.search(r'"match_level"\s*:\s*"([^"]+)"', clean_json_str, re.I)
             rf_match = re.search(r'"risk_factor"\s*:\s*"([^"]+)"', clean_json_str, re.I)
-            same_match = re.search(r'"is_same_entity"\s*:\s*(true|false)', clean_json_str, re.I)
-            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|risk_factor|is_same_entity)"', clean_json_str, re.DOTALL | re.I)
+            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|risk_factor)"', clean_json_str, re.DOTALL | re.I)
             
             if lvl_match:
                 match_level_found = lvl_match.group(1)
             if rf_match:
                 risk_factor_found = rf_match.group(1)
-            if same_match:
-                is_same_found = same_match.group(1).lower() == "true"
             if reason_match:
                 reasoning_found = reason_match.group(1).replace('\\"', '"').replace('\n', ' ')
             else:
@@ -195,8 +190,7 @@ def get_llm_judgment(pair):
             judgment = {
                 "reasoning": reasoning_found,
                 "match_level": match_level_found,
-                "risk_factor": risk_factor_found,
-                "is_same_entity": is_same_found
+                "risk_factor": risk_factor_found
             }
             
         return judgment
@@ -205,8 +199,7 @@ def get_llm_judgment(pair):
         return {
             "reasoning": f"解析 LLM 失敗：{str(e)}",
             "match_level": "Uncertain",
-            "risk_factor": "",
-            "is_same_entity": False
+            "risk_factor": ""
         }
 
 def process_single_pair(pair, idx, total_count):
@@ -237,7 +230,6 @@ def process_single_pair(pair, idx, total_count):
         "原XML命中率": f"{pair['xml_percentage']}%",
         "LLM研判等級": match_level,
         "風險判定依據": risk_factor,
-        "LLM判定是否同實體": "是" if judgment.get("is_same_entity") else "否",
         "LLM分析推理理由": judgment.get("reasoning", "無描述")
     }
     return item
