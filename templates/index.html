@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICP-Compare 戰略出口合規審計平台</title>
+    <!-- Google Fonts & Lucide Icons -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark-theme">
+    <!-- 背景光圈與動態粒子效果 -->
+    <div class="bg-glow blob-1"></div>
+    <div class="bg-glow blob-2"></div>
+    <div class="bg-glow blob-3"></div>
+
+    <div class="app-container">
+        <!-- 1. 頂部導航欄 (Top Navigation Bar) -->
+        <header class="navbar glass-card">
+            <div class="brand">
+                <div class="logo-icon"><i data-lucide="shield-check"></i></div>
+                <div class="brand-text">
+                    <h1>ICP-Compare <span>Web</span></h1>
+                    <p>戰略性高科技貨品出口實體合規審計平台</p>
+                </div>
+            </div>
+
+            <div class="system-status">
+                <div class="status-badge live">
+                    <span class="pulse-dot"></span>
+                    <i data-lucide="cpu"></i>
+                    <span>本地 LLM 專家模型：<strong>gemma-4:31B</strong> (Parallel Workers: 16)</span>
+                </div>
+                <div class="action-buttons">
+                    <button class="btn btn-outline" id="refresh-btn">
+                        <i data-lucide="refresh-cw"></i> 重新載入
+                    </button>
+                    <button class="btn btn-primary" id="download-excel-btn">
+                        <i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 2. 數據指標卡片 (KPI Dashboard Banner) -->
+        <section class="kpi-grid">
+            <div class="kpi-card glass-card">
+                <div class="kpi-icon total"><i data-lucide="file-search"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">總掃描對數</span>
+                    <h2 class="kpi-value" id="kpi-total">0</h2>
+                </div>
+            </div>
+
+            <div class="kpi-card glass-card">
+                <div class="kpi-icon release"><i data-lucide="zap"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">自動放行率 (誤判率)</span>
+                    <h2 class="kpi-value highlight-green" id="kpi-rate">0.0%</h2>
+                </div>
+            </div>
+
+            <div class="kpi-card glass-card border-high">
+                <div class="kpi-icon high"><i data-lucide="alert-triangle"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🔴 High 高風險 (攔截)</span>
+                    <h2 class="kpi-value text-high" id="kpi-high">0</h2>
+                </div>
+            </div>
+
+            <div class="kpi-card glass-card border-medium">
+                <div class="kpi-icon medium"><i data-lucide="git-fork"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🟠 Medium 關聯企業 (二審)</span>
+                    <h2 class="kpi-value text-medium" id="kpi-medium">0</h2>
+                </div>
+            </div>
+
+            <div class="kpi-card glass-card border-fp">
+                <div class="kpi-icon fp"><i data-lucide="check-circle-2"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🟢 False Positive (確定誤判)</span>
+                    <h2 class="kpi-value text-fp" id="kpi-fp">0</h2>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. 上傳區與執行面板 (Upload & Audit Control Panel) -->
+        <section class="control-panel glass-card">
+            <div class="panel-header">
+                <h3><i data-lucide="upload-cloud"></i> 批次 XML 出口報單/實體清冊上傳與審算</h3>
+                <span class="file-status" id="file-status-text">目前對接資料來源: testfile/*.xml</span>
+            </div>
+
+            <div class="panel-body">
+                <div class="drop-zone" id="drop-zone">
+                    <i data-lucide="folder-up" class="drop-icon"></i>
+                    <p class="drop-title">將 raw XML 報文檔案拖曳至此，或 <span>點擊上傳</span></p>
+                    <p class="drop-subtitle">支援自動辨識 Condition 及 Party 節點，自動過濾 &gt;= 75.0% 模糊命中對象</p>
+                    <input type="file" id="file-input" multiple accept=".xml" hidden>
+                </div>
+
+                <div class="audit-action-box">
+                    <button class="btn btn-hero" id="run-audit-btn">
+                        <i data-lucide="play-circle"></i>
+                        <span>啟動全自動 LLM 合規審核</span>
+                    </button>
+                    
+                    <div class="progress-box hidden" id="progress-box">
+                        <div class="progress-info">
+                            <span id="progress-label">正在使用 gemma-4:31B 平行語意審算中...</span>
+                            <span id="progress-percent">0%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. 頁籤篩選與搜尋列 (Filter Tabs & Search Bar) -->
+        <section class="filter-section">
+            <div class="tabs-group">
+                <button class="tab-btn active" data-filter="ALL">
+                    <i data-lucide="layers"></i> 全部案件 (<span id="count-all">0</span>)
+                </button>
+                <button class="tab-btn tab-high" data-filter="High">
+                    <i data-lucide="shield-alert"></i> 🔴 High 高風險 (<span id="count-high">0</span>)
+                </button>
+                <button class="tab-btn tab-medium" data-filter="Medium">
+                    <i data-lucide="building"></i> 🟠 Medium 關聯企業 (<span id="count-medium">0</span>)
+                </button>
+                <button class="tab-btn tab-low" data-filter="Low">
+                    <i data-lucide="help-circle"></i> 🟡 Low 疑慮案件 (<span id="count-low">0</span>)
+                </button>
+                <button class="tab-btn tab-fp" data-filter="False Positive">
+                    <i data-lucide="shield-check"></i> 🟢 確定誤判放行 (<span id="count-fp">0</span>)
+                </button>
+            </div>
+
+            <div class="search-box">
+                <i data-lucide="search" class="search-icon"></i>
+                <input type="text" id="search-input" placeholder="搜尋實體名稱、條件 ID、地址或國家...">
+            </div>
+        </section>
+
+        <!-- 5. 卡片式審計視圖 (Audit Cards Container) -->
+        <main class="cards-grid" id="cards-container">
+            <!-- 載入中骨架畫面 -->
+            <div class="loading-state">
+                <i data-lucide="loader-2" class="spin-icon"></i>
+                <p>正在載入合規審計分析資料...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- 6. 單筆稽核憑證視窗 (Audit Certificate Modal) -->
+    <div class="modal-backdrop hidden" id="cert-modal">
+        <div class="modal-card glass-card">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i data-lucide="award"></i>
+                    <h3>戰略出口合規審計稽核憑證 (Audit Trail Certificate)</h3>
+                </div>
+                <button class="modal-close" id="close-modal-btn"><i data-lucide="x"></i></button>
+            </div>
+            
+            <div class="modal-body" id="modal-content">
+                <!-- 動態注入憑證內容 -->
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-outline" id="print-cert-btn"><i data-lucide="printer"></i> 列印合規憑證</button>
+                <button class="btn btn-primary" id="confirm-modal-btn">確定閉合</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
