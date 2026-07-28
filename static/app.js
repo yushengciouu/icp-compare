@@ -34,15 +34,37 @@ async function initApp() {
 
 function updateKPIs(stats) {
     if (!stats) return;
+    const highCount = Number(stats.high || 0);
+    const mediumCount = Number(stats.medium || 0);
+
     document.getElementById("kpi-total").textContent = stats.total || 0;
     document.getElementById("kpi-rate").textContent = `${stats.auto_release_rate || 0}%`;
-    document.getElementById("kpi-high").textContent = stats.high || 0;
-    document.getElementById("kpi-medium").textContent = stats.medium || 0;
+    document.getElementById("kpi-high").textContent = highCount;
+    document.getElementById("kpi-medium").textContent = mediumCount;
     document.getElementById("kpi-fp").textContent = stats.fp || 0;
 
+    // 動態警示發光邏輯：僅在非 0 時觸發發光
+    const highCard = document.getElementById("kpi-card-high");
+    if (highCard) {
+        if (highCount > 0) {
+            highCard.classList.add("has-warning-high");
+        } else {
+            highCard.classList.remove("has-warning-high");
+        }
+    }
+
+    const mediumCard = document.getElementById("kpi-card-medium");
+    if (mediumCard) {
+        if (mediumCount > 0) {
+            mediumCard.classList.add("has-warning-medium");
+        } else {
+            mediumCard.classList.remove("has-warning-medium");
+        }
+    }
+
     document.getElementById("count-all").textContent = stats.total || 0;
-    document.getElementById("count-high").textContent = stats.high || 0;
-    document.getElementById("count-medium").textContent = stats.medium || 0;
+    document.getElementById("count-high").textContent = highCount;
+    document.getElementById("count-medium").textContent = mediumCount;
     document.getElementById("count-low").textContent = stats.low || 0;
     document.getElementById("count-fp").textContent = stats.fp || 0;
     

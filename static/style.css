@@ -1,41 +1,38 @@
 /* ==========================================================================
-   ICP-Compare Neo-Tech Cyber Glow Design System
+   ICP-Compare Vibrant Micro-Gradient Glass Design System
    ========================================================================== */
 
 :root {
     --font-heading: 'Outfit', -apple-system, sans-serif;
     --font-body: 'Inter', -apple-system, sans-serif;
 
-    /* Neo-Tech Cyber Palette */
-    --bg-dark: #060913;
-    --bg-card: rgba(12, 19, 36, 0.8);
-    --bg-card-hover: rgba(18, 30, 56, 0.95);
-    --border-glass: rgba(59, 130, 246, 0.18);
-    --border-glass-bright: rgba(96, 165, 250, 0.35);
+    /* Vibrant Micro-Gradient Palette */
+    --bg-dark: #0B1120;
+    --bg-card: rgba(15, 23, 42, 0.68);
+    --bg-card-hover: rgba(30, 41, 59, 0.85);
+    --border-glass: rgba(255, 255, 255, 0.1);
+    --border-glass-bright: rgba(255, 255, 255, 0.22);
 
     /* Text Colors */
-    --text-main: #F1F5F9;
+    --text-main: #F8FAFC;
     --text-muted: #94A3B8;
     --text-dim: #64748B;
 
-    /* Cyber Neon Accent Colors */
-    --color-high: #FF4D4D;
-    --color-high-glow: rgba(255, 77, 77, 0.4);
-    --color-high-bg: rgba(255, 77, 77, 0.12);
+    /* Micro-Gradient Risk Colors */
+    --color-high: #F87171;
+    --color-high-bg: rgba(239, 68, 68, 0.15);
 
-    --color-medium: #FFB020;
-    --color-medium-glow: rgba(255, 176, 32, 0.4);
-    --color-medium-bg: rgba(255, 176, 32, 0.12);
+    --color-medium: #FBBF24;
+    --color-medium-bg: rgba(245, 158, 11, 0.15);
 
     --color-low: #FACC15;
-    --color-low-bg: rgba(250, 204, 21, 0.12);
+    --color-low-bg: rgba(250, 204, 21, 0.15);
 
-    --color-fp: #10B981;
-    --color-fp-glow: rgba(16, 185, 129, 0.4);
-    --color-fp-bg: rgba(16, 185, 129, 0.12);
+    --color-fp: #34D399;
+    --color-fp-bg: rgba(16, 185, 129, 0.15);
 
-    --color-accent-blue: #3B82F6;
-    --color-accent-teal: #06B6D4;
+    --color-accent-blue: #60A5FA;
+    --color-accent-teal: #2DD4BF;
 }
 
 * {
@@ -47,10 +44,8 @@
 body {
     background-color: var(--bg-dark);
     background-image: 
-        radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.12) 0%, transparent 60%),
-        linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-    background-size: 100% 100%, 40px 40px, 40px 40px;
+        radial-gradient(ellipse at 20% 0%, rgba(59, 130, 246, 0.18) 0%, transparent 50%),
+        radial-gradient(ellipse at 80% 100%, rgba(236, 72, 153, 0.12) 0%, transparent 50%);
     color: var(--text-main);
     font-family: var(--font-body);
     min-height: 100vh;
@@ -59,34 +54,34 @@ body {
     position: relative;
 }
 
-/* Cyber Pulse Background Glow */
+/* Vibrant Aurora Background Glow */
 .bg-glow {
     position: fixed;
     border-radius: 50%;
-    filter: blur(120px);
+    filter: blur(130px);
     z-index: -1;
     pointer-events: none;
-    opacity: 0.25;
+    opacity: 0.22;
 }
 .blob-1 {
-    width: 550px;
-    height: 550px;
-    background: radial-gradient(circle, #2563EB 0%, transparent 70%);
-    top: -150px;
-    left: -100px;
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, #3B82F6 0%, transparent 70%);
+    top: -180px;
+    left: -120px;
 }
 .blob-2 {
     width: 650px;
     height: 650px;
-    background: radial-gradient(circle, #DC2626 0%, transparent 70%);
-    bottom: -200px;
+    background: radial-gradient(circle, #E11D48 0%, transparent 70%);
+    bottom: -220px;
     right: -150px;
 }
 .blob-3 {
     width: 450px;
     height: 450px;
-    background: radial-gradient(circle, #059669 0%, transparent 70%);
-    top: 40%;
+    background: radial-gradient(circle, #10B981 0%, transparent 70%);
+    top: 45%;
     left: 50%;
     transform: translate(-50%, -50%);
 }
@@ -97,14 +92,14 @@ body {
     padding: 28px 24px;
 }
 
-/* Neo-Tech Cyber Card Container Style */
+/* Micro-Gradient Glass Card Style */
 .glass-card {
     background: var(--bg-card);
-    backdrop-filter: blur(18px);
-    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
     border: 1px solid var(--border-glass);
-    border-radius: 14px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -115,8 +110,8 @@ body {
     align-items: center;
     padding: 18px 28px;
     margin-bottom: 24px;
-    border: 1px solid rgba(59, 130, 246, 0.25);
-    box-shadow: 0 0 25px rgba(37, 99, 235, 0.12);
+    background: linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .brand {
@@ -128,13 +123,13 @@ body {
 .logo-icon {
     width: 46px;
     height: 46px;
-    background: linear-gradient(135deg, #2563EB, #06B6D4);
-    border-radius: 10px;
+    background: linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
+    border-radius: 12px;
     display: flex;
     align-items: center;
     justify-content: center;
     color: #FFF;
-    box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+    box-shadow: 0 6px 20px rgba(139, 92, 246, 0.35);
 }
 .logo-icon i {
     width: 26px;
@@ -149,7 +144,7 @@ body {
     color: #FFF;
 }
 .brand-text h1 span {
-    background: linear-gradient(90deg, #38BDF8, #818CF8);
+    background: linear-gradient(90deg, #60A5FA 0%, #A78BFA 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
 }
@@ -169,7 +164,7 @@ body {
     align-items: center;
     gap: 8px;
     padding: 10px 20px;
-    border-radius: 8px;
+    border-radius: 10px;
     font-size: 0.88rem;
     font-weight: 600;
     cursor: pointer;
@@ -181,25 +176,24 @@ body {
     height: 18px;
 }
 .btn-primary {
-    background: linear-gradient(135deg, #2563EB, #0284C7);
+    background: linear-gradient(135deg, #3B82F6 0%, #6366F1 100%);
     color: #FFF;
-    box-shadow: 0 0 20px rgba(37, 99, 235, 0.4);
+    box-shadow: 0 4px 18px rgba(99, 102, 241, 0.35);
 }
 .btn-primary:hover {
     transform: translateY(-2px);
-    box-shadow: 0 0 28px rgba(56, 189, 248, 0.6);
+    box-shadow: 0 6px 24px rgba(99, 102, 241, 0.5);
 }
 .btn-outline {
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(255, 255, 255, 0.05);
     color: var(--text-main);
     border: 1px solid var(--border-glass-bright);
 }
 .btn-outline:hover {
-    background: rgba(30, 41, 59, 0.8);
-    border-color: #60A5FA;
+    background: rgba(255, 255, 255, 0.12);
 }
 
-/* 2. Neo-Tech Cyber Glow KPI Grid */
+/* 2. Vibrant Micro-Gradient KPI Banner Grid */
 .kpi-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -214,58 +208,79 @@ body {
     padding: 22px;
     position: relative;
     overflow: hidden;
-    border-radius: 12px;
-    background: rgba(12, 20, 38, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    transition: all 0.3s ease;
+    border-radius: 16px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Neon Glow Borders for Cyber Command Style */
-.border-total { 
-    border: 1px solid rgba(59, 130, 246, 0.45); 
-    box-shadow: inset 0 0 12px rgba(59, 130, 246, 0.15), 0 0 16px rgba(59, 130, 246, 0.12); 
-}
-.border-release { 
-    border: 1px solid rgba(20, 184, 166, 0.45); 
-    box-shadow: inset 0 0 12px rgba(20, 184, 166, 0.15), 0 0 16px rgba(20, 184, 166, 0.12); 
-}
-.border-high { 
-    border: 1px solid rgba(255, 77, 77, 0.5); 
-    box-shadow: inset 0 0 15px rgba(255, 77, 77, 0.18), 0 0 20px rgba(255, 77, 77, 0.15); 
-}
+/* 一般平時卡片樣式：無彩色邊框、不發光、沉穩低調 */
+.border-total,
+.border-release,
+.border-fp,
+.border-high,
 .border-medium { 
-    border: 1px solid rgba(255, 176, 32, 0.5); 
-    box-shadow: inset 0 0 15px rgba(255, 176, 32, 0.18), 0 0 20px rgba(255, 176, 32, 0.15); 
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: none;
 }
-.border-fp { 
-    border: 1px solid rgba(16, 185, 129, 0.5); 
-    box-shadow: inset 0 0 15px rgba(16, 185, 129, 0.18), 0 0 20px rgba(16, 185, 129, 0.15); 
+
+/* 🔴 High 非 0 時：強烈警示脈衝發光 (Pulsing Glow) */
+.kpi-card.has-warning-high {
+    border: 1px solid rgba(239, 68, 68, 0.85) !important;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.28) 0%, rgba(225, 29, 72, 0.12) 100%) !important;
+    animation: warningPulseRed 2.4s infinite ease-in-out;
+}
+
+@keyframes warningPulseRed {
+    0%, 100% {
+        box-shadow: 0 0 15px rgba(239, 68, 68, 0.35), inset 0 0 10px rgba(239, 68, 68, 0.15);
+        border-color: rgba(248, 113, 113, 0.6);
+    }
+    50% {
+        box-shadow: 0 0 35px rgba(239, 68, 68, 0.85), inset 0 0 22px rgba(239, 68, 68, 0.4);
+        border-color: rgba(239, 68, 68, 1);
+    }
+}
+
+/* 🟠 Medium 非 0 時：二審警示脈衝發光 (Pulsing Glow) */
+.kpi-card.has-warning-medium {
+    border: 1px solid rgba(245, 158, 11, 0.85) !important;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.28) 0%, rgba(217, 119, 6, 0.12) 100%) !important;
+    animation: warningPulseAmber 2.4s infinite ease-in-out;
+}
+
+@keyframes warningPulseAmber {
+    0%, 100% {
+        box-shadow: 0 0 15px rgba(245, 158, 11, 0.35), inset 0 0 10px rgba(245, 158, 11, 0.15);
+        border-color: rgba(251, 191, 36, 0.6);
+    }
+    50% {
+        box-shadow: 0 0 35px rgba(245, 158, 11, 0.85), inset 0 0 22px rgba(245, 158, 11, 0.4);
+        border-color: rgba(245, 158, 11, 1);
+    }
 }
 
 .kpi-card:hover {
-    transform: translateY(-3px);
+    transform: translateY(-2px);
+    border-color: rgba(255, 255, 255, 0.18);
 }
-.border-high:hover { box-shadow: inset 0 0 20px rgba(255, 77, 77, 0.25), 0 0 28px rgba(255, 77, 77, 0.3); }
-.border-medium:hover { box-shadow: inset 0 0 20px rgba(255, 176, 32, 0.25), 0 0 28px rgba(255, 176, 32, 0.3); }
-.border-fp:hover { box-shadow: inset 0 0 20px rgba(16, 185, 129, 0.25), 0 0 28px rgba(16, 185, 129, 0.3); }
-.border-total:hover { box-shadow: inset 0 0 20px rgba(59, 130, 246, 0.25), 0 0 28px rgba(59, 130, 246, 0.3); }
-.border-release:hover { box-shadow: inset 0 0 20px rgba(20, 184, 166, 0.25), 0 0 28px rgba(20, 184, 166, 0.3); }
 
 .kpi-icon {
-    width: 50px;
-    height: 50px;
+    width: 48px;
+    height: 48px;
     border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
 }
-.kpi-icon i { width: 25px; height: 25px; }
-.kpi-icon.total { background: rgba(59, 130, 246, 0.2); color: #60A5FA; border: 1px solid rgba(59, 130, 246, 0.4); text-shadow: 0 0 8px #3B82F6; }
-.kpi-icon.release { background: rgba(20, 184, 166, 0.2); color: #2DD4BF; border: 1px solid rgba(20, 184, 166, 0.4); text-shadow: 0 0 8px #14B8A6; }
-.kpi-icon.high { background: rgba(255, 77, 77, 0.2); color: #FF6B6B; border: 1px solid rgba(255, 77, 77, 0.4); text-shadow: 0 0 8px #FF4D4D; }
-.kpi-icon.medium { background: rgba(255, 176, 32, 0.2); color: #FFC107; border: 1px solid rgba(255, 176, 32, 0.4); text-shadow: 0 0 8px #FFB020; }
-.kpi-icon.fp { background: rgba(16, 185, 129, 0.2); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.4); text-shadow: 0 0 8px #10B981; }
+.kpi-icon i { width: 24px; height: 24px; }
+/* 低調不發光的圖示底色 */
+.kpi-icon.total { background: rgba(255, 255, 255, 0.05); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.08); }
+.kpi-icon.release { background: rgba(255, 255, 255, 0.05); color: #34D399; border: 1px solid rgba(255, 255, 255, 0.08); }
+.kpi-icon.fp { background: rgba(255, 255, 255, 0.05); color: #34D399; border: 1px solid rgba(255, 255, 255, 0.08); }
+/* 醒目的高低風險Icon */
+.kpi-icon.high { background: rgba(239, 68, 68, 0.2); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); }
+.kpi-icon.medium { background: rgba(245, 158, 11, 0.2); color: #FDE68A; border: 1px solid rgba(245, 158, 11, 0.35); }
 
 .kpi-info {
     display: flex;
@@ -280,16 +295,16 @@ body {
 }
 .kpi-value {
     font-family: var(--font-heading);
-    font-size: 2.1rem;
+    font-size: 2.15rem;
     font-weight: 800;
     line-height: 1.1;
     letter-spacing: -0.5px;
     color: #FFFFFF;
 }
-.highlight-green { color: #34D399; text-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
-.text-high { color: #FF6B6B; text-shadow: 0 0 12px rgba(255, 107, 107, 0.4); }
-.text-medium { color: #FFE066; text-shadow: 0 0 12px rgba(255, 224, 102, 0.4); }
-.text-fp { color: #34D399; text-shadow: 0 0 12px rgba(52, 211, 153, 0.4); }
+.highlight-green { color: #34D399; }
+.text-high { color: #FCA5A5; }
+.text-medium { color: #FDE68A; }
+.text-fp { color: #6EE7B7; }
 
 /* 3. Upload & Control Panel */
 .control-panel {
