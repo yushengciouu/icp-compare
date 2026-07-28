@@ -613,48 +613,36 @@ body {
 .btn-action-pass { background: rgba(16, 185, 129, 0.2); color: #6EE7B7; border: 1px solid rgba(16, 185, 129, 0.4); }
 .btn-action-pass:hover { background: rgba(16, 185, 129, 0.4); }
 
-/* Modal System */
-.modal-backdrop {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    display: flex;
+/* 處置建議標籤 (Suggestion Tag) */
+.suggestion-tag {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    z-index: 1000;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: 500;
 }
-.modal-card {
-    width: 750px;
-    max-width: 90%;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
+.suggestion-tag strong {
+    font-weight: 700;
 }
-.modal-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border-glass);
+.suggestion-high {
+    background: rgba(239, 68, 68, 0.12);
+    color: #FCA5A5;
+    border: 1px solid rgba(239, 68, 68, 0.3);
 }
-.modal-title { display: flex; align-items: center; gap: 10px; color: var(--color-accent-blue); }
-.modal-close { background: none; border: none; color: var(--text-muted); cursor: pointer; }
-.modal-close:hover { color: #FFF; }
+.suggestion-medium {
+    background: rgba(245, 158, 11, 0.12);
+    color: #FDE68A;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.suggestion-pass {
+    background: rgba(16, 185, 129, 0.12);
+    color: #6EE7B7;
+    border: 1px solid rgba(16, 185, 129, 0.3);
+}
 
-.modal-body {
-    padding: 24px;
-    overflow-y: auto;
-    font-size: 0.9rem;
-    line-height: 1.6;
-}
-.modal-footer {
-    padding: 16px 24px;
-    border-top: 1px solid var(--border-glass);
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-}
+
 
 .hidden { display: none !important; }
 .loading-state {

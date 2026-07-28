@@ -121,6 +121,13 @@ async def download_report(filename: str):
 
 @app.post("/api/upload")
 async def upload_xml_files(files: List[UploadFile] = File(...)):
+    # 每次上傳新檔案時，先自動清空舊的 XML 檔案
+    for old_file in TESTFILE_DIR.glob("*.xml"):
+        try:
+            old_file.unlink()
+        except Exception as e:
+            print(f"無法刪除舊檔案 {old_file.name}: {e}")
+
     saved_files = []
     for file in files:
         if not file.filename.endswith(".xml"):
@@ -130,7 +137,7 @@ async def upload_xml_files(files: List[UploadFile] = File(...)):
         target_path.write_bytes(content)
         saved_files.append(file.filename)
         
-    return {"status": "success", "uploaded": saved_files, "message": f"成功上傳 {len(saved_files)} 個 XML 檔案"}
+    return {"status": "success", "uploaded": saved_files, "message": f"已自動清空舊檔並成功上傳 {len(saved_files)} 個 XML 檔案"}
 
 def run_background_audit():
     global AUDIT_STATUS

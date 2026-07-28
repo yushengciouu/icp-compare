@@ -160,18 +160,30 @@ function createCardElement(rec, index) {
 
         <div class="reasoning-box">
             <div class="reasoning-header">
-                <i data-lucide="brain-circuit"></i> LLM 專家模型 Chain-of-Thought (CoT) 審計推理理由：
+                <i data-lucide="brain-circuit"></i> 專家模型審計推理理由：
             </div>
             <div class="reasoning-body">${escapeHtml(reasoning)}</div>
         </div>
 
         <div class="card-actions">
-            <button class="btn btn-outline btn-action-cert" onclick="openCertModal(${JSON.stringify(rec).replace(/"/g, '&quot;')})">
-                <i data-lucide="file-check"></i> 查看稽核憑證
-            </button>
-            ${level === 'High' ? `<button class="btn btn-action-hold"><i data-lucide="slash"></i> 攔截凍結交易</button>` : ''}
-            ${level === 'Medium' ? `<button class="btn btn-action-review"><i data-lucide="file-text"></i> 索取 UBO 證明</button>` : ''}
-            ${(level === 'False Positive' || level === 'Low') ? `<button class="btn btn-action-pass"><i data-lucide="check-circle"></i> 自動放行令</button>` : ''}
+            ${level === 'High' ? `
+                <div class="suggestion-tag suggestion-high">
+                    <i data-lucide="slash" style="width:15px;height:15px;"></i>
+                    <span>建議處置：<strong>攔截凍結交易</strong></span>
+                </div>
+            ` : ''}
+            ${level === 'Medium' ? `
+                <div class="suggestion-tag suggestion-medium">
+                    <i data-lucide="file-text" style="width:15px;height:15px;"></i>
+                    <span>建議處置：<strong>人工二審</strong></span>
+                </div>
+            ` : ''}
+            ${(level === 'False Positive' || level === 'Low') ? `
+                <div class="suggestion-tag suggestion-pass">
+                    <i data-lucide="check-circle" style="width:15px;height:15px;"></i>
+                    <span>建議處置：<strong>自動放行</strong></span>
+                </div>
+            ` : ''}
         </div>
     `;
 
@@ -197,12 +209,15 @@ function setupEventListeners() {
     });
 
     // 重新整理
-    document.getElementById("refresh-btn").addEventListener("click", initApp);
+    const refreshBtn = document.getElementById("refresh-btn");
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", initApp);
+    }
 
     // 下載 Excel 報表
     document.getElementById("download-excel-btn").addEventListener("click", () => {
         if (!latestFileName) {
-            alert("目前尚無可供下載的 Excel 報表");
+            showToast("目前尚無可供下載的 Excel 報表", "error");
             return;
         }
         window.location.href = `/api/reports/download/${latestFileName}`;
@@ -210,10 +225,6 @@ function setupEventListeners() {
 
     // 啟動審核
     document.getElementById("run-audit-btn").addEventListener("click", startAudit);
-
-    // Modal 開關
-    document.getElementById("close-modal-btn").addEventListener("click", closeModal);
-    document.getElementById("confirm-modal-btn").addEventListener("click", closeModal);
 
     // 拖曳上傳
     const dropZone = document.getElementById("drop-zone");
@@ -250,9 +261,9 @@ async function handleFileUpload(files) {
     try {
         const res = await fetch("/api/upload", { method: "POST", body: formData });
         const data = await res.json();
-        alert(data.message || "上傳完成！點擊「啟動全自動 LLM 合規審核」即可進行比對。");
+        showToast(data.message || "上傳完成！點擊「啟動全自動 LLM 合規審核」即可進行比對。");
     } catch (err) {
-        alert("上傳失敗: " + err.message);
+        showToast("上傳失敗: " + err.message, "error");
     }
 }
 
@@ -281,54 +292,16 @@ async function startAudit() {
                 clearInterval(interval);
                 btn.disabled = false;
                 progressBox.classList.add("hidden");
-                alert("合規審核作業完成！已更新最新數據。");
+                showToast("合規審核作業完成！已更新最新數據。");
                 await initApp();
             }
         }, 1500);
 
     } catch (err) {
-        alert("啟動審核失敗: " + err.message);
+        showToast("啟動審核失敗: " + err.message, "error");
         btn.disabled = false;
         progressBox.classList.add("hidden");
     }
-}
-
-function openCertModal(rec) {
-    const modal = document.getElementById("cert-modal");
-    const content = document.getElementById("modal-content");
-
-    content.innerHTML = `
-        <div style="background: rgba(15,23,42,0.8); padding: 20px; border-radius: 10px; border: 1px solid var(--border-glass-bright);">
-            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid var(--border-glass); padding-bottom: 12px; margin-bottom: 16px;">
-                <div>
-                    <h4 style="font-size: 1.1rem; color: #FFF;">合規審計稽核軌跡紀錄</h4>
-                    <p style="font-size: 0.8rem; color: var(--text-muted);">Audit Trail Reference ID: ${rec["條件ID"] || 'N/A'}-${rec["黑名單ID"] || 'N/A'}</p>
-                </div>
-                <div style="text-align: right;">
-                    <span style="font-weight: 700; color: var(--color-accent-blue);">${rec["LLM研判等級"]}</span>
-                    <p style="font-size: 0.8rem; color: var(--text-muted);">${new Date().toLocaleString()}</p>
-                </div>
-            </div>
-
-            <div style="margin-bottom: 14px;"><strong>查詢實體：</strong> ${escapeHtml(rec["查詢名稱"])} (${escapeHtml(rec["查詢國家"] || '')})</div>
-            <div style="margin-bottom: 14px;"><strong>查詢出貨地址：</strong> ${escapeHtml(rec["查詢地址"])}</div>
-            <div style="margin-bottom: 14px;"><strong>命中限制實體：</strong> ${escapeHtml(rec["黑名單名稱"])} (ID: ${escapeHtml(rec["黑名單ID"])})</div>
-            <div style="margin-bottom: 14px;"><strong>限制實體物理地址：</strong> ${escapeHtml(rec["黑名單地址"])}</div>
-            <div style="margin-bottom: 14px; color: var(--color-medium);"><strong>判定依據：</strong> ${escapeHtml(rec["風險判定依據"] || '無')}</div>
-            
-            <div style="background: rgba(30,41,59,0.7); padding: 12px; border-radius: 6px; margin-top: 14px;">
-                <strong style="color: #60A5FA;">專家 CoT 推理審定結論：</strong>
-                <p style="margin-top: 6px; font-size: 0.85rem; line-height: 1.5;">${escapeHtml(rec["LLM分析推理理由"])}</p>
-            </div>
-        </div>
-    `;
-
-    modal.classList.remove("hidden");
-    lucide.createIcons();
-}
-
-function closeModal() {
-    document.getElementById("cert-modal").classList.add("hidden");
 }
 
 function showEmptyState(msg) {
@@ -350,4 +323,59 @@ function escapeHtml(text) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+function showToast(message, type = "info") {
+    let toastContainer = document.getElementById("toast-container");
+    if (!toastContainer) {
+        toastContainer = document.createElement("div");
+        toastContainer.id = "toast-container";
+        toastContainer.style.cssText = `
+            position: fixed;
+            top: 24px;
+            right: 24px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        `;
+        document.body.appendChild(toastContainer);
+    }
+
+    const toast = document.createElement("div");
+    toast.style.cssText = `
+        background: ${type === "error" ? "rgba(220, 38, 38, 0.92)" : "rgba(30, 41, 59, 0.92)"};
+        color: #ffffff;
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: 1px solid ${type === "error" ? "rgba(248, 113, 113, 0.5)" : "rgba(96, 165, 250, 0.3)"};
+        backdrop-filter: blur(8px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        font-size: 0.9rem;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        opacity: 0;
+        transform: translateY(-12px);
+        pointer-events: auto;
+    `;
+    
+    const iconName = type === "error" ? "alert-circle" : "check-circle";
+    toast.innerHTML = `<i data-lucide="${iconName}" style="width:18px;height:18px;flex-shrink:0;"></i><span>${escapeHtml(message)}</span>`;
+    toastContainer.appendChild(toast);
+    lucide.createIcons();
+
+    setTimeout(() => {
+        toast.style.opacity = "1";
+        toast.style.transform = "translateY(0)";
+    }, 10);
+
+    setTimeout(() => {
+        toast.style.opacity = "0";
+        toast.style.transform = "translateY(-12px)";
+        setTimeout(() => toast.remove(), 300);
+    }, 3200);
 }

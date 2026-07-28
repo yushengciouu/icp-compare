@@ -29,15 +29,7 @@
             </div>
 
             <div class="system-status">
-                <div class="status-badge live">
-                    <span class="pulse-dot"></span>
-                    <i data-lucide="cpu"></i>
-                    <span>本地 LLM 專家模型：<strong>gemma-4:31B</strong> (Parallel Workers: 16)</span>
-                </div>
                 <div class="action-buttons">
-                    <button class="btn btn-outline" id="refresh-btn">
-                        <i data-lucide="refresh-cw"></i> 重新載入
-                    </button>
                     <button class="btn btn-primary" id="download-excel-btn">
                         <i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表
                     </button>
@@ -156,28 +148,6 @@
                 <p>正在載入合規審計分析資料...</p>
             </div>
         </main>
-    </div>
-
-    <!-- 6. 單筆稽核憑證視窗 (Audit Certificate Modal) -->
-    <div class="modal-backdrop hidden" id="cert-modal">
-        <div class="modal-card glass-card">
-            <div class="modal-header">
-                <div class="modal-title">
-                    <i data-lucide="award"></i>
-                    <h3>戰略出口合規審計稽核憑證 (Audit Trail Certificate)</h3>
-                </div>
-                <button class="modal-close" id="close-modal-btn"><i data-lucide="x"></i></button>
-            </div>
-            
-            <div class="modal-body" id="modal-content">
-                <!-- 動態注入憑證內容 -->
-            </div>
-
-            <div class="modal-footer">
-                <button class="btn btn-outline" id="print-cert-btn"><i data-lucide="printer"></i> 列印合規憑證</button>
-                <button class="btn btn-primary" id="confirm-modal-btn">確定閉合</button>
-            </div>
-        </div>
     </div>
 
     <script src="/static/app.js"></script>
