@@ -19,10 +19,12 @@ BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"
 TESTFILE_DIR = BASE_DIR / "testfile"
+REPORTS_DIR = BASE_DIR / "reports"
 
 STATIC_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
 TESTFILE_DIR.mkdir(exist_ok=True)
+REPORTS_DIR.mkdir(exist_ok=True)
 
 app = FastAPI(title="ICP-Compare Web 戰略出口合規審計平台")
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
@@ -39,7 +41,7 @@ AUDIT_STATUS = {
 }
 
 def get_latest_excel_path() -> Optional[Path]:
-    files = list(BASE_DIR.glob("ICP_Audit_Report_*.xlsx"))
+    files = list(REPORTS_DIR.glob("ICP_Audit_Report_*.xlsx")) + list(BASE_DIR.glob("ICP_Audit_Report_*.xlsx"))
     files = [f for f in files if not f.name.startswith("~$")]
     if not files:
         return None
@@ -99,7 +101,7 @@ async def get_latest_audit_results():
 
 @app.get("/api/reports")
 async def list_reports():
-    files = list(BASE_DIR.glob("ICP_Audit_Report_*.xlsx"))
+    files = list(REPORTS_DIR.glob("ICP_Audit_Report_*.xlsx")) + list(BASE_DIR.glob("ICP_Audit_Report_*.xlsx"))
     files = [f for f in files if not f.name.startswith("~$")]
     files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     
@@ -114,7 +116,9 @@ async def list_reports():
 
 @app.get("/api/reports/download/{filename}")
 async def download_report(filename: str):
-    file_path = BASE_DIR / filename
+    file_path = REPORTS_DIR / filename
+    if not file_path.exists():
+        file_path = BASE_DIR / filename
     if not file_path.exists() or not file_path.name.endswith(".xlsx"):
         raise HTTPException(status_code=404, detail="檔案不存在")
     return FileResponse(path=file_path, filename=filename, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -193,15 +197,283 @@ def run_background_audit():
             AUDIT_STATUS["progress"] = int((AUDIT_STATUS["completed"] / AUDIT_STATUS["total"]) * 100)
             
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_excel = BASE_DIR / f"ICP_Audit_Report_{timestamp}.xlsx"
+    output_excel = REPORTS_DIR / f"ICP_Audit_Report_{timestamp}.xlsx"
     
     df = pd.DataFrame(results)
     df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
     generate_formatted_excel_report(str(output_excel))
+    generate_standalone_html(output_excel)
     
     AUDIT_STATUS["is_running"] = False
     AUDIT_STATUS["last_completed_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     AUDIT_STATUS["last_report"] = output_excel.name
+
+def generate_standalone_html(excel_path: Path) -> Path:
+    html_output_path = excel_path.with_suffix(".html")
+    records = load_excel_records(excel_path)
+    
+    total = len(records)
+    high_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "High")
+    medium_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "Medium")
+    low_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "Low")
+    fp_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "False Positive")
+    auto_release_rate = round((fp_count / total * 100), 1) if total > 0 else 0.0
+
+    css_content = (STATIC_DIR / "style.css").read_text(encoding="utf-8") if (STATIC_DIR / "style.css").exists() else ""
+    
+    records_json = json.dumps(records, ensure_ascii=False)
+    
+    html_content = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICP-Compare 戰略出口合規審計報告 ({excel_path.stem})</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+{css_content}
+    </style>
+</head>
+<body class="dark-theme">
+    <div class="bg-glow blob-1"></div>
+    <div class="bg-glow blob-2"></div>
+    <div class="bg-glow blob-3"></div>
+
+    <div class="app-container">
+        <header class="navbar glass-card">
+            <div class="brand">
+                <div class="logo-icon"><i data-lucide="shield-check"></i></div>
+                <div class="brand-text">
+                    <h1>ICP-Compare <span>Interactive Report</span></h1>
+                    <p>戰略性高科技貨品出口合規審計報告 (離線獨立版: {excel_path.name})</p>
+                </div>
+            </div>
+        </header>
+
+        <section class="kpi-grid">
+            <div class="kpi-card glass-card border-total">
+                <div class="kpi-icon total"><i data-lucide="file-search"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">總掃描對數</span>
+                    <h2 class="kpi-value">{total}</h2>
+                </div>
+            </div>
+            <div class="kpi-card glass-card border-release">
+                <div class="kpi-icon release"><i data-lucide="zap"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">自動放行率 (誤判率)</span>
+                    <h2 class="kpi-value highlight-green">{auto_release_rate}%</h2>
+                </div>
+            </div>
+            <div class="kpi-card glass-card border-high {'has-warning-high' if high_count > 0 else ''}">
+                <div class="kpi-icon high"><i data-lucide="alert-triangle"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🔴 High 高風險 (攔截)</span>
+                    <h2 class="kpi-value text-high">{high_count}</h2>
+                </div>
+            </div>
+            <div class="kpi-card glass-card border-medium {'has-warning-medium' if medium_count > 0 else ''}">
+                <div class="kpi-icon medium"><i data-lucide="git-fork"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🟠 Medium 關聯企業 (二審)</span>
+                    <h2 class="kpi-value text-medium">{medium_count}</h2>
+                </div>
+            </div>
+            <div class="kpi-card glass-card border-fp">
+                <div class="kpi-icon fp"><i data-lucide="check-circle-2"></i></div>
+                <div class="kpi-info">
+                    <span class="kpi-label">🟢 False Positive (確定誤判)</span>
+                    <h2 class="kpi-value text-fp">{fp_count}</h2>
+                </div>
+            </div>
+        </section>
+
+        <section class="filter-section">
+            <div class="tabs-group">
+                <button class="tab-btn active" data-filter="ALL"><i data-lucide="layers"></i> 全部案件 ({total})</button>
+                <button class="tab-btn tab-high" data-filter="High"><i data-lucide="shield-alert"></i> 🔴 High 高風險 ({high_count})</button>
+                <button class="tab-btn tab-medium" data-filter="Medium"><i data-lucide="building"></i> 🟠 Medium 關聯企業 ({medium_count})</button>
+                <button class="tab-btn tab-low" data-filter="Low"><i data-lucide="help-circle"></i> 🟡 Low 疑慮案件 ({low_count})</button>
+                <button class="tab-btn tab-fp" data-filter="False Positive"><i data-lucide="shield-check"></i> 🟢 確定誤判放行 ({fp_count})</button>
+            </div>
+            <div class="search-box">
+                <i data-lucide="search" class="search-icon"></i>
+                <input type="text" id="search-input" placeholder="搜尋實體名稱、條件 ID、地址或國家...">
+            </div>
+        </section>
+
+        <main class="cards-grid" id="cards-container"></main>
+    </div>
+
+    <script>
+        const allRecords = {records_json};
+        let currentFilter = "ALL";
+        let currentSearch = "";
+
+        document.addEventListener("DOMContentLoaded", () => {{
+            lucide.createIcons();
+            renderCards();
+            setupEvents();
+        }});
+
+        function renderCards() {{
+            const container = document.getElementById("cards-container");
+            container.innerHTML = "";
+
+            const filtered = allRecords.filter(rec => {{
+                const level = String(rec["LLM研判等級"] || "").trim();
+                const matchesFilter = (currentFilter === "ALL") || (level === currentFilter);
+                const searchText = (
+                    String(rec["查詢名稱"] || "") +
+                    String(rec["黑名單名稱"] || "") +
+                    String(rec["條件ID"] || "") +
+                    String(rec["黑名單ID"] || "") +
+                    String(rec["查詢地址"] || "") +
+                    String(rec["黑名單地址"] || "")
+                ).toLowerCase();
+                const matchesSearch = !currentSearch || searchText.includes(currentSearch.toLowerCase());
+                return matchesFilter && matchesSearch;
+            }});
+
+            if (filtered.length === 0) {{
+                container.innerHTML = `<div class="loading-state"><i data-lucide="inbox" style="width: 48px; height: 48px; opacity: 0.5;"></i><p style="margin-top: 12px;">無符合條件的合規案件對照紀錄</p></div>`;
+                lucide.createIcons();
+                return;
+            }}
+
+            filtered.forEach((rec, idx) => {{
+                const card = createCardElement(rec, idx + 1);
+                container.appendChild(card);
+            }});
+            lucide.createIcons();
+        }}
+
+        function getBadgeClass(level) {{
+            switch (level) {{
+                case "High": return "badge-high";
+                case "Medium": return "badge-medium";
+                case "Low": return "badge-low";
+                case "False Positive": return "badge-fp";
+                default: return "badge-low";
+            }}
+        }}
+
+        function getBadgeLabel(level) {{
+            switch (level) {{
+                case "High": return "🔴 High (同一實體/轉運風險)";
+                case "Medium": return "🟠 Medium (關聯企業)";
+                case "Low": return "🟡 Low (疑慮)";
+                case "False Positive": return "🟢 False Positive (確定誤判)";
+                default: return level;
+            }}
+        }}
+
+        function createCardElement(rec, index) {{
+            const card = document.createElement("article");
+            card.className = "audit-card glass-card";
+            const level = String(rec["LLM研判等級"] || "").trim();
+            const queryName = rec["查詢名稱"] || "—";
+            const watchName = rec["黑名單名稱"] || "—";
+            const conditionId = rec["條件ID"] || "—";
+            const partyId = rec["黑名單ID"] || "—";
+            const pct = rec["原XML命中率"] || "—";
+            const riskFactor = rec["風險判定依據"] || "";
+            const reasoning = rec["LLM分析推理理由"] || "尚無推理資料";
+
+            card.innerHTML = `
+                <div class="card-header-bar">
+                    <div class="case-title">
+                        <span class="case-num">#${{String(index).padStart(2, '0')}}</span>
+                        <span class="entity-pair-name">${{escapeHtml(queryName)}} <span>⇄</span> ${{escapeHtml(watchName)}}</span>
+                    </div>
+                    <div class="badges-group">
+                        <span class="pct-badge"><i data-lucide="percent" style="width: 12px; display:inline;"></i> ${{pct}}</span>
+                        <span class="badge ${{getBadgeClass(level)}}">${{getBadgeLabel(level)}}</span>
+                    </div>
+                </div>
+
+                <div class="comparison-container">
+                    <div class="entity-box">
+                        <h4><i data-lucide="user-search"></i> 查詢實體 (Condition)</h4>
+                        <div class="info-row"><strong>條件ID:</strong> ${{escapeHtml(conditionId)}}</div>
+                        <div class="info-row"><strong>名稱:</strong> ${{escapeHtml(queryName)}}</div>
+                        <div class="info-row"><strong>國家/城市:</strong> ${{escapeHtml(rec["查詢國家"] || "—")}} / ${{escapeHtml(rec["查詢城市"] || "—")}}</div>
+                        <div class="info-row"><strong>地址:</strong> ${{escapeHtml(rec["查詢地址"] || "—")}}</div>
+                    </div>
+                    <div class="entity-box">
+                        <h4><i data-lucide="shield-alert"></i> 黑名單限制實體 (Party)</h4>
+                        <div class="info-row"><strong>黑名單ID:</strong> ${{escapeHtml(partyId)}}</div>
+                        <div class="info-row"><strong>黑名單名稱:</strong> ${{escapeHtml(watchName)}}</div>
+                        <div class="info-row"><strong>地址:</strong> ${{escapeHtml(rec["黑名單地址"] || "—")}}</div>
+                        <div class="info-row"><strong>完整細節:</strong> ${{escapeHtml(rec["黑名單完整資訊"] || "—")}}</div>
+                    </div>
+                </div>
+
+                ${{riskFactor ? `<div class="risk-factor-tag"><i data-lucide="target" style="width: 12px; display:inline;"></i> 風險判定依據：${{escapeHtml(riskFactor)}}</div>` : ''}}
+
+                <div class="reasoning-box">
+                    <div class="reasoning-header">
+                        <i data-lucide="brain-circuit"></i> 專家模型審計推理理由：
+                    </div>
+                    <div class="reasoning-body">${{escapeHtml(reasoning)}}</div>
+                </div>
+
+                <div class="card-actions">
+                    ${{level === 'High' ? `<div class="suggestion-tag suggestion-high"><i data-lucide="slash" style="width:15px;height:15px;"></i><span>建議處置：<strong>攔截凍結交易</strong></span></div>` : ''}}
+                    ${{level === 'Medium' ? `<div class="suggestion-tag suggestion-medium"><i data-lucide="file-text" style="width:15px;height:15px;"></i><span>建議處置：<strong>人工二審</strong></span></div>` : ''}}
+                    ${{(level === 'False Positive' || level === 'Low') ? `<div class="suggestion-tag suggestion-pass"><i data-lucide="check-circle" style="width:15px;height:15px;"></i><span>建議處置：<strong>自動放行</strong></span></div>` : ''}}
+                </div>
+            `;
+            return card;
+        }}
+
+        function setupEvents() {{
+            document.querySelectorAll(".tab-btn").forEach(btn => {{
+                btn.addEventListener("click", () => {{
+                    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+                    btn.classList.add("active");
+                    currentFilter = btn.getAttribute("data-filter");
+                    renderCards();
+                }});
+            }});
+
+            const searchInput = document.getElementById("search-input");
+            searchInput.addEventListener("input", (e) => {{
+                currentSearch = e.target.value.trim();
+                renderCards();
+            }});
+        }}
+
+        function escapeHtml(text) {{
+            if (!text) return "";
+            return String(text)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }}
+    </script>
+</body>
+</html>
+"""
+    html_output_path.write_text(html_content, encoding="utf-8")
+    return html_output_path
+
+@app.get("/api/reports/download_html/{filename}")
+async def download_html_report(filename: str):
+    base_name = filename.rsplit(".", 1)[0]
+    excel_file = REPORTS_DIR / f"{base_name}.xlsx"
+    if not excel_file.exists():
+        excel_file = BASE_DIR / f"{base_name}.xlsx"
+    if not excel_file.exists():
+        raise HTTPException(status_code=404, detail="對應的 Excel 審計報表不存在")
+    
+    html_file = generate_standalone_html(excel_file)
+    return FileResponse(path=html_file, filename=html_file.name, media_type="text/html")
 
 @app.post("/api/audit/run")
 async def trigger_audit(background_tasks: BackgroundTasks):

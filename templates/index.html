@@ -30,7 +30,10 @@
 
             <div class="system-status">
                 <div class="action-buttons">
-                    <button class="btn btn-primary" id="download-excel-btn">
+                    <button class="btn btn-outline" id="download-html-btn">
+                        <i data-lucide="file-code"></i> 匯出 HTML 視覺化報表
+                    </button>
+                    <button class="btn btn-outline" id="download-excel-btn">
                         <i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表
                     </button>
                 </div>
@@ -103,7 +106,7 @@
                     
                     <div class="progress-box hidden" id="progress-box">
                         <div class="progress-info">
-                            <span id="progress-label">正在使用 gemma-4:31B 平行語意審算中...</span>
+                            <span id="progress-label">正在推理中...</span>
                             <span id="progress-percent">0%</span>
                         </div>
                         <div class="progress-bar">

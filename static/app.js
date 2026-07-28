@@ -236,6 +236,18 @@ function setupEventListeners() {
         refreshBtn.addEventListener("click", initApp);
     }
 
+    // 下載 HTML 視覺化報表
+    const downloadHtmlBtn = document.getElementById("download-html-btn");
+    if (downloadHtmlBtn) {
+        downloadHtmlBtn.addEventListener("click", () => {
+            if (!latestFileName) {
+                showToast("目前尚無可供下載的 HTML 視覺化報表", "error");
+                return;
+            }
+            window.location.href = `/api/reports/download_html/${latestFileName}`;
+        });
+    }
+
     // 下載 Excel 報表
     document.getElementById("download-excel-btn").addEventListener("click", () => {
         if (!latestFileName) {
