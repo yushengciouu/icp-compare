@@ -74,9 +74,23 @@ uv sync
 本機配備了雙路 **NVIDIA H200 NVL**，為極大化發揮 vLLM 的 **Continuous Batching (連續批推論矩陣)** 優勢：
 * **最大併發執行緒下調 (`MAX_WORKERS` = 64)**：能瞬間把 concurrent 請求拉滿，讓 Python 將 HTTP 發送壓降，雙 H200 可以在 **20秒 內** 高速處理完高達 288 筆複雜比對。
 
-### 3. 一鍵執行審核
+### 3. 執行合規審核與啟動 Web 審計平台
+
+#### 🅰️ 啟動 Web 戰略合規審計平台 (推薦 ⭐)
 ```bash
-# 執行主程式（自動掃描 testfile/*_raw.xml）：
+# 啟動 Web 後端與 Glassmorphism 前端儀表板：
+uv run python web_server.py
+```
+啟動後於瀏覽器存取 **`http://localhost:8000`** 即可進入圖形化審計平台：
+* 📊 **合規 KPI 儀表板**：即時統計總掃描對數、自動放行率 (%)、High / Medium 風險數量。
+* 📥 **拖曳上傳與啟動**：支援直覺式 Drag-and-Drop 批次上傳 XML 報文並即時監控推論進度。
+* 🎴 **互動式審計卡片**：內建風險頁籤切換（🔴 High / 🟠 Medium / 🟢 FP）與關鍵字即時搜尋。
+* 📜 **電子合規憑證 (Audit Trail)**：可開啟單筆案件的完整 Chain-of-Thought 推理證明彈窗。
+* 📥 **一鍵匯出 Excel 報表**。
+
+#### 🅱️ 靜默 Command-Line 批次執行
+```bash
+# 執行主程式（自動掃描 testfile/*_raw.xml 並生成 Excel）：
 uv run compare_audit.py
 ```
 
