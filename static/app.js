@@ -1,11 +1,13 @@
 /**
  * ICP-Compare Web 戰略出口合規審計平台 前端邏輯 (App.js)
+ * 支援多使用者 Session / Job-ID 獨立隔離與頁面清空重置
  */
 
 let allRecords = [];
 let currentFilter = "ALL";
 let currentSearch = "";
 let latestFileName = "";
+let currentJobId = sessionStorage.getItem("currentJobId") || null;
 
 document.addEventListener("DOMContentLoaded", () => {
     lucide.createIcons();
@@ -14,22 +16,49 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 async function initApp() {
+    if (!currentJobId) {
+        // 初始狀態或已清空：顯示純淨待上傳狀態
+        resetPageToInitialState();
+        return;
+    }
+
     try {
-        const res = await fetch("/api/audit/latest");
+        const res = await fetch(`/api/audit/results?job_id=${currentJobId}`);
         const data = await res.json();
 
-        if (data.status === "success") {
-            latestFileName = data.file_name;
+        if (data.status === "success" && data.records && data.records.length > 0) {
+            latestFileName = data.stats.file_name || "";
             allRecords = data.records || [];
             updateKPIs(data.stats);
             renderCards();
         } else {
-            showEmptyState(data.message || "尚未有審計報表資料");
+            resetPageToInitialState();
         }
     } catch (err) {
         console.error("載入失敗:", err);
-        showEmptyState("連接後端失敗，請確認 web_server.py 是否已啟動");
+        resetPageToInitialState();
     }
+}
+
+function resetPageToInitialState() {
+    currentJobId = null;
+    sessionStorage.removeItem("currentJobId");
+    allRecords = [];
+    latestFileName = "";
+
+    updateKPIs({
+        total: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+        fp: 0,
+        auto_release_rate: 0.0,
+        file_name: "",
+        last_updated: ""
+    });
+
+    document.getElementById("file-status-text").textContent = "目前狀態: 乾淨初始狀態 (等待上傳 XML 報文檔案)";
+    showEmptyState("當前畫面已清空，請上傳 XML 報文檔案開始進行合規審算");
 }
 
 function updateKPIs(stats) {
@@ -69,7 +98,7 @@ function updateKPIs(stats) {
     document.getElementById("count-fp").textContent = stats.fp || 0;
     
     if (stats.file_name) {
-        document.getElementById("file-status-text").textContent = `目前載入報表: ${stats.file_name} (${stats.last_updated})`;
+        document.getElementById("file-status-text").textContent = `任務備忘: ${stats.file_name} (${stats.last_updated})`;
     }
 }
 
@@ -146,7 +175,6 @@ function createCardElement(rec, index) {
     const pct = rec["原XML命中率"] || "—";
     const riskFactor = rec["風險判定依據"] || "";
     const reasoning = rec["LLM分析推理理由"] || "尚無推理資料";
-    const sourceFile = rec["來源檔案"] || "—";
 
     card.innerHTML = `
         <div class="card-header-bar">
@@ -182,20 +210,20 @@ function createCardElement(rec, index) {
 
         <div class="reasoning-box">
             <div class="reasoning-header">
-                <i data-lucide="brain-circuit"></i> 專家模型審計推理理由：
+                <i data-lucide="brain-circuit"></i> LLM 專家模型 Chain-of-Thought (CoT) 審計推理理由：
             </div>
             <div class="reasoning-body">${escapeHtml(reasoning)}</div>
         </div>
 
-        <div class="card-actions">
+        <div class="card-footer-actions">
             ${level === 'High' ? `
-                <div class="suggestion-tag suggestion-high">
+                <div class="suggestion-tag suggestion-hold">
                     <i data-lucide="slash" style="width:15px;height:15px;"></i>
                     <span>建議處置：<strong>攔截凍結交易</strong></span>
                 </div>
             ` : ''}
             ${level === 'Medium' ? `
-                <div class="suggestion-tag suggestion-medium">
+                <div class="suggestion-tag suggestion-review">
                     <i data-lucide="file-text" style="width:15px;height:15px;"></i>
                     <span>建議處置：<strong>人工二審</strong></span>
                 </div>
@@ -213,6 +241,15 @@ function createCardElement(rec, index) {
 }
 
 function setupEventListeners() {
+    // 清空與重置按鈕
+    const resetBtn = document.getElementById("reset-btn");
+    if (resetBtn) {
+        resetBtn.addEventListener("click", () => {
+            resetPageToInitialState();
+            showToast("已清空重置當前頁面至初始狀態");
+        });
+    }
+
     // 頁籤過濾
     document.querySelectorAll(".tab-btn").forEach(btn => {
         btn.addEventListener("click", () => {
@@ -230,31 +267,13 @@ function setupEventListeners() {
         renderCards();
     });
 
-    // 重新整理
-    const refreshBtn = document.getElementById("refresh-btn");
-    if (refreshBtn) {
-        refreshBtn.addEventListener("click", initApp);
-    }
-
-    // 下載 HTML 視覺化報表
-    const downloadHtmlBtn = document.getElementById("download-html-btn");
-    if (downloadHtmlBtn) {
-        downloadHtmlBtn.addEventListener("click", () => {
-            if (!latestFileName) {
-                showToast("目前尚無可供下載的 HTML 視覺化報表", "error");
-                return;
-            }
-            window.location.href = `/api/reports/download_html/${latestFileName}`;
-        });
-    }
-
     // 下載 Excel 報表
     document.getElementById("download-excel-btn").addEventListener("click", () => {
-        if (!latestFileName) {
-            showToast("目前尚無可供下載的 Excel 報表", "error");
+        if (!currentJobId) {
+            showToast("當前無可供下載的審計報表，請先上傳檔案並執行審算", "error");
             return;
         }
-        window.location.href = `/api/reports/download/${latestFileName}`;
+        window.location.href = `/api/reports/download?job_id=${currentJobId}`;
     });
 
     // 啟動審核
@@ -292,16 +311,29 @@ async function handleFileUpload(files) {
         formData.append("files", f);
     }
 
+    const uploadUrl = currentJobId ? `/api/upload?job_id=${currentJobId}` : "/api/upload";
+
     try {
-        const res = await fetch("/api/upload", { method: "POST", body: formData });
+        const res = await fetch(uploadUrl, { method: "POST", body: formData });
         const data = await res.json();
-        showToast(data.message || "上傳完成！點擊「啟動全自動 LLM 合規審核」即可進行比對。");
+
+        if (data.status === "success" && data.job_id) {
+            currentJobId = data.job_id;
+            sessionStorage.setItem("currentJobId", currentJobId);
+            document.getElementById("file-status-text").textContent = `已成功上傳 ${data.uploaded.length} 個檔案 (任務 ID: ${currentJobId})`;
+            showToast(data.message || "上傳完成！點擊「啟動全自動 LLM 合規審核」即可進行比對。");
+        }
     } catch (err) {
         showToast("上傳失敗: " + err.message, "error");
     }
 }
 
 async function startAudit() {
+    if (!currentJobId) {
+        showToast("請先上傳 XML 報文檔案再點擊啟動審核", "error");
+        return;
+    }
+
     const btn = document.getElementById("run-audit-btn");
     const progressBox = document.getElementById("progress-box");
     const progressFill = document.getElementById("progress-fill");
@@ -311,12 +343,19 @@ async function startAudit() {
     progressBox.classList.remove("hidden");
 
     try {
-        const res = await fetch("/api/audit/run", { method: "POST" });
+        const res = await fetch(`/api/audit/run?job_id=${currentJobId}`, { method: "POST" });
         const data = await res.json();
 
-        // 輪詢狀態
+        if (data.status === "error") {
+            showToast(data.message || "啟動失敗", "error");
+            btn.disabled = false;
+            progressBox.classList.add("hidden");
+            return;
+        }
+
+        // 輪詢該任務專屬狀態
         const interval = setInterval(async () => {
-            const statusRes = await fetch("/api/audit/status");
+            const statusRes = await fetch(`/api/audit/status?job_id=${currentJobId}`);
             const status = await statusRes.json();
 
             progressFill.style.width = `${status.progress}%`;
