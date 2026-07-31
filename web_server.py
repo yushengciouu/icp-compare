@@ -61,6 +61,100 @@ def calculate_stats(records: List[Dict[str, Any]], file_name: str, mod_time: str
         "last_updated": mod_time
     }
 
+def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], output_path: Path):
+    """生成單一獨立、可離線開啟的 HTML 視覺化合規審計報告"""
+    cards_html = ""
+    for idx, rec in enumerate(records, 1):
+        level = str(rec.get("LLM研判等級", "")).strip()
+        badge_class = "badge-high" if level == "High" else "badge-medium" if level == "Medium" else "badge-low" if level == "Low" else "badge-fp"
+        badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟡 Low (疑慮)" if level == "Low" else "🟢 False Positive (確定誤判)"
+        
+        cards_html += f"""
+        <div class="card">
+            <div class="card-header">
+                <div class="case-title">#{idx:02d} {rec.get('查詢名稱', '—')} ⇄ {rec.get('黑名單名稱', '—')}</div>
+                <div>
+                    <span class="pct">{rec.get('原XML命中率', '—')}</span>
+                    <span class="badge {badge_class}">{badge_label}</span>
+                </div>
+            </div>
+            <div class="grid">
+                <div class="box">
+                    <h4>查詢實體 (Condition)</h4>
+                    <p><strong>條件ID:</strong> {rec.get('條件ID', '—')}</p>
+                    <p><strong>名稱:</strong> {rec.get('查詢名稱', '—')}</p>
+                    <p><strong>國家/城市:</strong> {rec.get('查詢國家', '—')} / {rec.get('查詢城市', '—')}</p>
+                    <p><strong>地址:</strong> {rec.get('查詢地址', '—')}</p>
+                </div>
+                <div class="box">
+                    <h4>黑名單限制實體 (Party)</h4>
+                    <p><strong>黑名單ID:</strong> {rec.get('黑名單ID', '—')}</p>
+                    <p><strong>名稱:</strong> {rec.get('黑名單名稱', '—')}</p>
+                    <p><strong>地址:</strong> {rec.get('黑名單地址', '—')}</p>
+                    <p><strong>完整資訊:</strong> {rec.get('黑名單完整資訊', '—')}</p>
+                </div>
+            </div>
+            {f'<div class="risk-tag">風險判定依據：{rec.get("風險判定依據")}</div>' if rec.get("風險判定依據") else ''}
+            <div class="reasoning">
+                <strong>LLM 專家模型 Chain-of-Thought (CoT) 推理分析：</strong>
+                <p>{rec.get('LLM分析推理理由', '—')}</p>
+            </div>
+        </div>
+        """
+        
+    html_content = f"""<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>ICP-Compare 獨立視覺化審計報告 ({stats.get('file_name', '')})</title>
+    <style>
+        body {{ background: #0B0F19; color: #F1F5F9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; line-height: 1.5; }}
+        .header {{ background: rgba(30,41,59,0.7); border: 1px solid rgba(255,255,255,0.1); padding: 20px 28px; border-radius: 12px; margin-bottom: 24px; }}
+        .header h1 {{ margin: 0; font-size: 1.5rem; color: #3B82F6; }}
+        .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }}
+        .kpi {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 12px; }}
+        .kpi span {{ font-size: 0.8rem; color: #94A3B8; }}
+        .kpi h2 {{ margin: 4px 0 0 0; font-size: 1.6rem; }}
+        .card {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 12px; margin-bottom: 20px; }}
+        .card-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px; }}
+        .case-title {{ font-size: 1.1rem; font-weight: 700; color: #FFF; }}
+        .badge {{ padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }}
+        .badge-high {{ background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid #EF4444; }}
+        .badge-medium {{ background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid #F59E0B; }}
+        .badge-low {{ background: rgba(234, 179, 8, 0.15); color: #EAB308; }}
+        .badge-fp {{ background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid #10B981; }}
+        .pct {{ background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 8px; }}
+        .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }}
+        .box {{ background: rgba(15,23,42,0.5); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; }}
+        .box h4 {{ margin: 0 0 10px 0; color: #14B8A6; font-size: 0.9rem; }}
+        .box p {{ margin: 4px 0; }}
+        .risk-tag {{ background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 14px; display: inline-block; }}
+        .reasoning {{ background: rgba(30,41,59,0.5); border-left: 4px solid #3B82F6; padding: 14px; border-radius: 6px; font-size: 0.85rem; }}
+        .reasoning strong {{ color: #60A5FA; display: block; margin-bottom: 6px; }}
+        @media print {{ body {{ background: #FFF; color: #000; }} .card {{ page-break-inside: avoid; border: 1px solid #CCC; color: #000; background: #FFF; }} .box {{ background: #F8FAFC; color: #000; }} .reasoning {{ background: #EFF6FF; color: #000; }} }}
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🛡️ ICP-Compare 出口合規審計報告 (HTML 視覺化版)</h1>
+        <p style="margin: 6px 0 0 0; color: #94A3B8; font-size: 0.85rem;">生成時間: {stats.get('last_updated', '')} | 報告檔名: {stats.get('file_name', '')}</p>
+    </div>
+    
+    <div class="kpis">
+        <div class="kpi"><span>總掃描對數</span><h2>{stats.get('total', 0)}</h2></div>
+        <div class="kpi"><span>自動放行率</span><h2 style="color: #10B981;">{stats.get('auto_release_rate', 0)}%</h2></div>
+        <div class="kpi"><span>🔴 High 高風險</span><h2 style="color: #EF4444;">{stats.get('high', 0)}</h2></div>
+        <div class="kpi"><span>🟠 Medium 關聯企業</span><h2 style="color: #F59E0B;">{stats.get('medium', 0)}</h2></div>
+        <div class="kpi"><span>🟢 False Positive</span><h2 style="color: #10B981;">{stats.get('fp', 0)}</h2></div>
+    </div>
+    
+    <div class="cards">
+        {cards_html}
+    </div>
+</body>
+</html>"""
+    output_path.write_text(html_content, encoding="utf-8")
+
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
     html_path = TEMPLATES_DIR / "index.html"
@@ -239,6 +333,31 @@ async def download_report(job_id: str = Query(...)):
     reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
     file_path = reports[0]
     return FileResponse(path=file_path, filename=file_path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+@app.get("/api/reports/download_html")
+async def download_html_report(job_id: str = Query(...)):
+    job_path = get_job_dir(job_id)
+    job_info = JOBS_REGISTRY.get(job_id, {})
+    records = job_info.get("records", [])
+    
+    if not records:
+        reports = list(job_path.glob("ICP_Audit_Report_*.xlsx"))
+        if reports:
+            reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            latest_excel = reports[0]
+            records = load_excel_records(latest_excel)
+            mod_time = datetime.fromtimestamp(latest_excel.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+            stats = calculate_stats(records, latest_excel.name, mod_time)
+        else:
+            raise HTTPException(status_code=404, detail="找不到該任務的審計紀錄，無法生成 HTML 報表")
+    else:
+        stats = job_info.get("stats", {})
+        
+    html_filename = f"ICP_Audit_Report_{job_id}.html"
+    html_path = job_path / html_filename
+    generate_html_report(records, stats, html_path)
+    
+    return FileResponse(path=html_path, filename=html_filename, media_type="text/html")
 
 if __name__ == "__main__":
     import uvicorn

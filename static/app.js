@@ -267,6 +267,18 @@ function setupEventListeners() {
         renderCards();
     });
 
+    // 下載 HTML 視覺化報表
+    const downloadHtmlBtn = document.getElementById("download-html-btn");
+    if (downloadHtmlBtn) {
+        downloadHtmlBtn.addEventListener("click", () => {
+            if (!currentJobId) {
+                showToast("當前無可供下載的 HTML 視覺化報表，請先上傳檔案並執行審算", "error");
+                return;
+            }
+            window.location.href = `/api/reports/download_html?job_id=${currentJobId}`;
+        });
+    }
+
     // 下載 Excel 報表
     document.getElementById("download-excel-btn").addEventListener("click", () => {
         if (!currentJobId) {
