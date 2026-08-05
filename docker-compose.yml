@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  icp-compare:
+    build: .
+    container_name: icp-compare-web
+    restart: always
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./jobs:/app/jobs
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
