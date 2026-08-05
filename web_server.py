@@ -3,15 +3,19 @@ import glob
 import re
 import json
 import uuid
+import shutil
+import time
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import load_workbook
 import pandas as pd
+from apscheduler.schedulers.background import BackgroundScheduler
 
 # 匯入現有的審計核心模組
 from compare_audit import parse_xml_file, get_llm_judgment, generate_formatted_excel_report
@@ -25,7 +29,45 @@ STATIC_DIR.mkdir(exist_ok=True)
 TEMPLATES_DIR.mkdir(exist_ok=True)
 JOBS_DIR.mkdir(exist_ok=True)
 
-app = FastAPI(title="ICP-Compare Web 戰略出口合規審計平台 (Multi-User Job Isolation)")
+def clean_expired_jobs(days: int = 7):
+    """自動清理在 JOBS_DIR 中最後修改時間超過指定天數 (預設 7 天) 的舊任務資料夾"""
+    if not JOBS_DIR.exists():
+        return
+
+    now = time.time()
+    cutoff_seconds = days * 86400  # 1 天 = 86400 秒
+    deleted_count = 0
+
+    for job_folder in JOBS_DIR.iterdir():
+        if job_folder.is_dir():
+            try:
+                mtime = job_folder.stat().st_mtime
+                if (now - mtime) > cutoff_seconds:
+                    shutil.rmtree(job_folder)
+                    deleted_count += 1
+                    print(f"[Auto Cleanup] 已自動刪除過期任務目錄: {job_folder.name}")
+            except Exception as e:
+                print(f"[Auto Cleanup Error] 刪除目錄 {job_folder.name} 失敗: {e}")
+
+    if deleted_count > 0:
+        print(f"[Auto Cleanup] 共自動清理了 {deleted_count} 個超過 {days} 天的舊任務目錄。")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 服務啟動時：開啟每週背景排程器
+    scheduler = BackgroundScheduler()
+    # 每週日凌晨 03:00 執行一次，清理 7 天前舊檔
+    scheduler.add_job(clean_expired_jobs, 'cron', day_of_week='sun', hour=3, minute=0, args=[7])
+    scheduler.start()
+    print("[Scheduler] 每週檔案自動清理排程器已成功啟動 (每週日 03:00 清理過期任務檔案)")
+
+    yield
+
+    # 服務關閉時：停止排程器
+    scheduler.shutdown()
+    print("[Scheduler] 自動清理排程器已正常停止")
+
+app = FastAPI(title="ICP-Compare Web 戰略出口合規審計平台 (Multi-User Job Isolation)", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 # 多任務動態狀態字典: job_id -> { is_running, progress, total, completed, last_report, records, stats }
@@ -62,15 +104,25 @@ def calculate_stats(records: List[Dict[str, Any]], file_name: str, mod_time: str
     }
 
 def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], output_path: Path):
-    """生成單一獨立、可離線開啟的 HTML 視覺化合規審計報告"""
+    """生成單一獨立、可離線開啟且支援即時篩選與搜尋的 HTML 視覺化合規審計報告"""
     cards_html = ""
     for idx, rec in enumerate(records, 1):
         level = str(rec.get("LLM研判等級", "")).strip()
         badge_class = "badge-high" if level == "High" else "badge-medium" if level == "Medium" else "badge-low" if level == "Low" else "badge-fp"
         badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟡 Low (疑慮)" if level == "Low" else "🟢 False Positive (確定誤判)"
         
+        search_text = (
+            str(rec.get("查詢名稱", "")) +
+            str(rec.get("黑名單名稱", "")) +
+            str(rec.get("條件ID", "")) +
+            str(rec.get("黑名單ID", "")) +
+            str(rec.get("查詢地址", "")) +
+            str(rec.get("黑名單地址", "")) +
+            str(rec.get("查詢國家", ""))
+        ).lower().replace('"', '&quot;')
+
         cards_html += f"""
-        <div class="card">
+        <div class="card" data-level="{level}" data-search="{search_text}">
             <div class="card-header">
                 <div class="case-title">#{idx:02d} {rec.get('查詢名稱', '—')} ⇄ {rec.get('黑名單名稱', '—')}</div>
                 <div>
@@ -102,6 +154,11 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
         </div>
         """
         
+    high_count = int(stats.get('high', 0))
+    medium_count = int(stats.get('medium', 0))
+    high_kpi_class = "kpi kpi-warning-high" if high_count > 0 else "kpi"
+    medium_kpi_class = "kpi kpi-warning-medium" if medium_count > 0 else "kpi"
+
     html_content = f"""<!DOCTYPE html>
 <html lang="zh-TW">
 <head>
@@ -112,10 +169,57 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
         .header {{ background: rgba(30,41,59,0.7); border: 1px solid rgba(255,255,255,0.1); padding: 20px 28px; border-radius: 12px; margin-bottom: 24px; }}
         .header h1 {{ margin: 0; font-size: 1.5rem; color: #3B82F6; }}
         .kpis {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }}
-        .kpi {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 12px; }}
+        .kpi {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 16px; border-radius: 12px; transition: all 0.3s; }}
         .kpi span {{ font-size: 0.8rem; color: #94A3B8; }}
         .kpi h2 {{ margin: 4px 0 0 0; font-size: 1.6rem; }}
-        .card {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 12px; margin-bottom: 20px; }}
+        
+        /* 🔴 High 非 0 時：強烈警示脈衝發光 (Pulsing Glow) */
+        .kpi.kpi-warning-high {{
+            border: 1px solid rgba(239, 68, 68, 0.85) !important;
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.28) 0%, rgba(225, 29, 72, 0.12) 100%) !important;
+            animation: warningPulseRed 2.4s infinite ease-in-out;
+        }}
+        /* 🟠 Medium 非 0 時：二審警示脈衝發光 (Pulsing Glow) */
+        .kpi.kpi-warning-medium {{
+            border: 1px solid rgba(245, 158, 11, 0.85) !important;
+            background: linear-gradient(135deg, rgba(245, 158, 11, 0.28) 0%, rgba(217, 119, 6, 0.12) 100%) !important;
+            animation: warningPulseAmber 2.4s infinite ease-in-out;
+        }}
+        @keyframes warningPulseRed {{
+            0%, 100% {{
+                box-shadow: 0 0 15px rgba(239, 68, 68, 0.35), inset 0 0 10px rgba(239, 68, 68, 0.15);
+                border-color: rgba(248, 113, 113, 0.6);
+            }}
+            50% {{
+                box-shadow: 0 0 35px rgba(239, 68, 68, 0.85), inset 0 0 22px rgba(239, 68, 68, 0.4);
+                border-color: rgba(239, 68, 68, 1);
+            }}
+        }}
+        @keyframes warningPulseAmber {{
+            0%, 100% {{
+                box-shadow: 0 0 15px rgba(245, 158, 11, 0.35), inset 0 0 10px rgba(245, 158, 11, 0.15);
+                border-color: rgba(251, 191, 36, 0.6);
+            }}
+            50% {{
+                box-shadow: 0 0 35px rgba(245, 158, 11, 0.85), inset 0 0 22px rgba(245, 158, 11, 0.4);
+                border-color: rgba(245, 158, 11, 1);
+            }}
+        }}
+
+        /* 篩選與搜尋列區塊 */
+        .filter-section {{ display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 24px; flex-wrap: wrap; background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 14px 20px; border-radius: 12px; }}
+        .tabs-group {{ display: flex; gap: 8px; flex-wrap: wrap; }}
+        .tab-btn {{ background: rgba(30,41,59,0.6); color: #94A3B8; border: 1px solid rgba(255,255,255,0.1); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; }}
+        .tab-btn:hover {{ background: rgba(51,65,85,0.8); color: #FFF; }}
+        .tab-btn.active {{ background: #3B82F6; color: #FFF; border-color: #60A5FA; font-weight: 600; box-shadow: 0 0 12px rgba(59,130,246,0.4); }}
+        .tab-btn.tab-high.active {{ background: #EF4444; border-color: #F87171; box-shadow: 0 0 12px rgba(239,68,68,0.4); }}
+        .tab-btn.tab-medium.active {{ background: #F59E0B; border-color: #FBBF24; box-shadow: 0 0 12px rgba(245,158,11,0.4); }}
+        .tab-btn.tab-low.active {{ background: #EAB308; border-color: #FDE047; box-shadow: 0 0 12px rgba(234,179,8,0.4); }}
+        .tab-btn.tab-fp.active {{ background: #10B981; border-color: #34D399; box-shadow: 0 0 12px rgba(16,185,129,0.4); }}
+        .search-box input {{ background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.15); color: #FFF; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; width: 280px; outline: none; transition: all 0.2s; }}
+        .search-box input:focus {{ border-color: #3B82F6; box-shadow: 0 0 8px rgba(59,130,246,0.3); }}
+        
+        .card {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 12px; margin-bottom: 20px; transition: all 0.2s; }}
         .card-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px; }}
         .case-title {{ font-size: 1.1rem; font-weight: 700; color: #FFF; }}
         .badge {{ padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }}
@@ -131,26 +235,60 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
         .risk-tag {{ background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 14px; display: inline-block; }}
         .reasoning {{ background: rgba(30,41,59,0.5); border-left: 4px solid #3B82F6; padding: 14px; border-radius: 6px; font-size: 0.85rem; }}
         .reasoning strong {{ color: #60A5FA; display: block; margin-bottom: 6px; }}
-        @media print {{ body {{ background: #FFF; color: #000; }} .card {{ page-break-inside: avoid; border: 1px solid #CCC; color: #000; background: #FFF; }} .box {{ background: #F8FAFC; color: #000; }} .reasoning {{ background: #EFF6FF; color: #000; }} }}
+        @media print {{ body {{ background: #FFF; color: #000; }} .filter-section {{ display: none; }} .card {{ page-break-inside: avoid; border: 1px solid #CCC; color: #000; background: #FFF; display: block !important; }} .box {{ background: #F8FAFC; color: #000; }} .reasoning {{ background: #EFF6FF; color: #000; }} }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🛡️ ICP-Compare 出口合規審計報告 (HTML 視覺化版)</h1>
+        <h1>🛡️ ICP-Compare 出口合規審計報告 (HTML 視覺化獨立版)</h1>
         <p style="margin: 6px 0 0 0; color: #94A3B8; font-size: 0.85rem;">生成時間: {stats.get('last_updated', '')} | 報告檔名: {stats.get('file_name', '')}</p>
     </div>
     
     <div class="kpis">
         <div class="kpi"><span>總掃描對數</span><h2>{stats.get('total', 0)}</h2></div>
         <div class="kpi"><span>自動放行率</span><h2 style="color: #10B981;">{stats.get('auto_release_rate', 0)}%</h2></div>
-        <div class="kpi"><span>🔴 High 高風險</span><h2 style="color: #EF4444;">{stats.get('high', 0)}</h2></div>
-        <div class="kpi"><span>🟠 Medium 關聯企業</span><h2 style="color: #F59E0B;">{stats.get('medium', 0)}</h2></div>
+        <div class="{high_kpi_class}"><span>🔴 High 高風險</span><h2 style="color: #EF4444;">{high_count}</h2></div>
+        <div class="{medium_kpi_class}"><span>🟠 Medium 關聯企業</span><h2 style="color: #F59E0B;">{medium_count}</h2></div>
         <div class="kpi"><span>🟢 False Positive</span><h2 style="color: #10B981;">{stats.get('fp', 0)}</h2></div>
     </div>
     
-    <div class="cards">
+    <section class="filter-section">
+        <div class="tabs-group">
+            <button class="tab-btn active" onclick="selectTab(this, 'ALL')">全部案件 ({stats.get('total', 0)})</button>
+            <button class="tab-btn tab-high" onclick="selectTab(this, 'High')">🔴 High 高風險 ({stats.get('high', 0)})</button>
+            <button class="tab-btn tab-medium" onclick="selectTab(this, 'Medium')">🟠 Medium 關聯企業 ({stats.get('medium', 0)})</button>
+            <button class="tab-btn tab-low" onclick="selectTab(this, 'Low')">🟡 Low 疑慮 ({stats.get('low', 0)})</button>
+            <button class="tab-btn tab-fp" onclick="selectTab(this, 'False Positive')">🟢 確定誤判 ({stats.get('fp', 0)})</button>
+        </div>
+        <div class="search-box">
+            <input type="text" id="search-input" placeholder="搜尋實體名稱、條件 ID、地址或國家..." oninput="filterCards()">
+        </div>
+    </section>
+
+    <div class="cards" id="cards-container">
         {cards_html}
     </div>
+
+    <script>
+        let currentFilter = 'ALL';
+        function selectTab(btn, filter) {{
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            currentFilter = filter;
+            filterCards();
+        }}
+        function filterCards() {{
+            const query = (document.getElementById('search-input').value || '').toLowerCase().trim();
+            const cards = document.querySelectorAll('.card');
+            cards.forEach(card => {{
+                const level = card.getAttribute('data-level') || '';
+                const text = card.getAttribute('data-search') || '';
+                const matchesFilter = (currentFilter === 'ALL') || (level === currentFilter);
+                const matchesSearch = !query || text.includes(query);
+                card.style.display = (matchesFilter && matchesSearch) ? 'block' : 'none';
+            }});
+        }}
+    </script>
 </body>
 </html>"""
     output_path.write_text(html_content, encoding="utf-8")
@@ -226,8 +364,22 @@ def run_background_job_audit(job_id: str):
         all_pairs.extend(pairs)
         
     if not all_pairs:
+        mod_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         job_info["is_running"] = False
         job_info["progress"] = 100
+        job_info["last_completed_at"] = mod_time
+        job_info["last_report"] = "無 75% 以上命中疑慮紀錄"
+        job_info["records"] = []
+        job_info["stats"] = {
+            "total": 0,
+            "high": 0,
+            "medium": 0,
+            "low": 0,
+            "fp": 0,
+            "auto_release_rate": 100.0,
+            "file_name": "無命中率 >= 75% 疑慮實體",
+            "last_updated": mod_time
+        }
         return
         
     job_info["total"] = len(all_pairs)

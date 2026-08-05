@@ -26,11 +26,15 @@ async function initApp() {
         const res = await fetch(`/api/audit/results?job_id=${currentJobId}`);
         const data = await res.json();
 
-        if (data.status === "success" && data.records && data.records.length > 0) {
-            latestFileName = data.stats.file_name || "";
+        if (data.status === "success" && data.records !== undefined) {
+            latestFileName = data.stats ? (data.stats.file_name || "") : "";
             allRecords = data.records || [];
             updateKPIs(data.stats);
-            renderCards();
+            if (allRecords.length === 0) {
+                showEmptyState("✅ 審算完成：上傳之 XML 報文全數合格（無命中率 >= 75% 之疑慮對照實體）");
+            } else {
+                renderCards();
+            }
         } else {
             resetPageToInitialState();
         }
