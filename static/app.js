@@ -177,7 +177,8 @@ function createCardElement(rec, index) {
     const conditionId = rec["條件ID"] || "—";
     const partyId = rec["黑名單ID"] || "—";
     const pct = rec["原XML命中率"] || "—";
-    const riskFactor = rec["風險判定依據"] || "";
+    const nameMatch = rec["公司名稱比對"] || "—";
+    const addressMatch = rec["地址比對"] || "—";
     const reasoning = rec["LLM分析推理理由"] || "尚無推理資料";
 
     card.innerHTML = `
@@ -210,7 +211,7 @@ function createCardElement(rec, index) {
             </div>
         </div>
 
-        ${riskFactor ? `<div class="risk-factor-tag"><i data-lucide="target" style="width: 12px; display:inline;"></i> 風險判定依據：${escapeHtml(riskFactor)}</div>` : ''}
+        <div class="risk-factor-tag"><i data-lucide="target" style="width: 12px; display:inline;"></i> 公司名稱：${escapeHtml(nameMatch)} ｜ 地址比對：${escapeHtml(addressMatch)}</div>
 
         <div class="reasoning-box">
             <div class="reasoning-header">

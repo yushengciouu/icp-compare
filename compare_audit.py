@@ -95,9 +95,9 @@ def build_reading_sheet(ws, records):
         # 摘要列
         summary = [
             ("A", "條件 ID", "B", s(rec.get("條件ID"))),
-            ("C", "原 XML 命中率", "D", s(rec.get("原XML命中率"))),
-            ("E", "LLM 研判等級", "F", s(rec.get("LLM研判等級"))),
-            ("G", "風險判定依據", "H", s(rec.get("風險判定依據"))),
+            ("C", "LLM 研判等級", "D", s(rec.get("LLM研判等級"))),
+            ("E", "公司名稱 (含別名)", "F", s(rec.get("公司名稱比對"))),
+            ("G", "地址比對", "H", s(rec.get("地址比對"))),
         ]
         for lc, label, vc, value in summary:
             ws[f"{lc}{row}"] = label
@@ -218,7 +218,7 @@ def build_detail_sheet(ws, headers, records):
     style_range(ws, f"A2:{last_col}{last_row}", color=COLORS["text"], size=10, vertical="top")
 
     wide = {"來源檔案", "查詢名稱", "查詢地址", "黑名單名稱", "黑名單地址", "黑名單完整資訊", "LLM分析推理理由"}
-    narrow = {"條件ID", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "風險判定依據"}
+    narrow = {"條件ID", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對"}
     for i, header in enumerate(headers, 1):
         letter = get_column_letter(i)
         ws.column_dimensions[letter].width = 38 if header in wide else 16 if header in narrow else 20
@@ -337,6 +337,40 @@ def parse_xml_file(xml_path):
                 
     return matched_pairs
 
+def determine_match_level(name_match_raw, address_match_raw):
+    """
+    依據硬性 8 種矩陣組合決定 LLM 研判等級 (High, Medium, Low)
+    """
+    name_str = "相同" if "相同" in str(name_match_raw) else "不同"
+    
+    addr_raw = str(address_match_raw).strip()
+    if "完全相同" in addr_raw:
+        addr_str = "完全相同"
+    elif "室樓層不同" in addr_raw or "樓層" in addr_raw:
+        addr_str = "號碼相同，室樓層不同"
+    elif "號碼不同" in addr_raw:
+        addr_str = "號碼不同"
+    elif "完全不同" in addr_raw:
+        addr_str = "完全不同"
+    else:
+        addr_str = "完全不同"
+
+    # 硬性對照表 (8種組合)
+    if name_str == "相同":
+        if addr_str in ["完全相同", "號碼不同", "號碼相同，室樓層不同"]:
+            level = "High"
+        else: # 完全不同
+            level = "Medium"
+    else: # 不同
+        if addr_str == "完全相同":
+            level = "High"
+        elif addr_str == "號碼相同，室樓層不同":
+            level = "Medium"
+        else: # 號碼不同 or 完全不同
+            level = "Low"
+
+    return level, name_str, addr_str
+
 def get_llm_judgment(pair):
     """
     呼叫本地 gemma-4:31B 進行深度語意比對。
@@ -357,37 +391,23 @@ def get_llm_judgment(pair):
 - 限制實體地址 (Address): {pair['party_address']}
 - 限制實體關聯詳細內容 (Content): {pair['party_content']}
 
-請遵循以下思考框架進行細緻的語意分析：
-1. **名稱主體分析 (Name Core Element)**：
-   - 移除常見法律後綴詞（如 GMBH, CO. KG, INC, LTD, PTE LTD, LLC 等）。
-   - 比對兩者核心名稱（例如 EBM-PAPST 是否與黑名單中的名稱實質關聯）。
-   - 注意中英文對譯（例如 廈門算能科技 與 Xiamen Sophgo）。
-2. **地址物理一致性與地理常識分析 (Address & Geography)**：
-   - 是否在同一棟商業大樓或物流園區？如果是像 Software Park (軟體園)、Midview City、工業園區等，多個不相關的公司共用同一地址是常見的。這時若公司名稱不同，大概率是 False Positive。
-   - 如果是「ShipTo (出貨地址)」比對，即使公司名字不同，若出貨的物理地址完全一致（特別是貨代倉庫或敏感地址），則具備高度的轉運合規風險，請判定為 High。
-3. **關聯性與別名解析 (Alias & Associations)**：
-   - 檢查黑名單 Detail (Content) 中是否有列出 alias (別名) 或轉投資股權結構，看看查詢原名是否正是其別名之一。
+請遵循以下思考框架進行細緻的語意分析並提取欄位：
 
-請做出最終的合規審計判定：
-- **High (同一實體 / 高風險轉運)**: 
-  - **兩者均相同**: 核心名稱完全對上，且物理地址高度相符。
-  - **地址相同（名稱不同）**: 核心名稱不同，但出貨地址/物理地址完全一致（存在高度白手套轉運/繞道合規風險）。
-- **Medium (關聯企業)**: 
-  - **名稱相同（地址不同）**: 核心名稱相同，但位於不同國家/城市或分支機構。
-  - **別名/轉投資命中**: 查詢名稱命中黑名單 Detail 中記載的別名(Alias)或轉投資關聯企業。
-- **Low (低風險/懷疑)**: 有些微相似度，但無法判定。
-- **False Positive (確定誤判)**: 字面相似或因共享園區大樓被篩出，但兩者名稱品牌毫不相干，且非同一實體。
+1. **公司名稱 (含別名) 比對 (`name_match`)**：
+   - `相同`: 兩者核心品牌名稱相同，或黑名單細節/別名(Alias)/轉投資股權資料中包含此查詢名稱（注意中英文對譯與別名關聯）。
+   - `不同`: 核心品牌名稱完全不同，且黑名單細節資料中無相關別名記載。
 
-針對風險判定，僅有 **High** 與 **Medium** 需要歸類「風險判定依據」(risk_factor)，可選標準值如下：
-- 若判定為 **High**，risk_factor 只能是: "兩者均相同" 或 "地址相同（名稱不同）"
-- 若判定為 **Medium**，risk_factor 只能是: "名稱相同（地址不同）" 或 "別名/轉投資命中"
-- 若判定為 **Low** 或 **False Positive**，risk_factor 請直接填寫 "" (空字串，不需要判定依據)
+2. **地址比對 (`address_match`)**：
+   - `完全相同`: 國家、城市、街道、門牌號碼及室樓層單位 100% 完全吻合。
+   - `號碼不同`: 位於同一條街道/區域，但門牌號碼不同（例如 安平街8號 vs 安平街12號）。
+   - `號碼相同，室樓層不同`: 街道與門牌大樓號碼相同（同一棟大樓），但房號或樓層不同（例如 Unit 601 vs Unit G/01，或 3樓 vs 6樓）。
+   - `完全不同`: 位於不同城市/國家，或街道地址完全不相干。
 
 請「僅」回覆以下標準的 JSON 格式（不要包含任何前後引導廢話或 markdown 的 ` ```json ` 標記，純 JSON 內容，確保可以被 json.loads 解析）：
 {{
   "reasoning": "繁體中文的優雅流暢分析推理過程，列出名稱、地址及關聯性的具體論據（注意：切勿在 reasoning 的字串內部使用未經轉義的雙引號，若需用引號請使用單引號或是 \\\"）",
-  "match_level": "High" / "Medium" / "Low" / "False Positive",
-  "risk_factor": "兩者均相同" / "地址相同（名稱不同）" / "名稱相同（地址不同）" / "別名/轉投資命中" / ""
+  "name_match": "相同" / "不同",
+  "address_match": "完全相同" / "號碼不同" / "號碼相同，室樓層不同" / "完全不同"
 }}
 """
     try:
@@ -402,56 +422,58 @@ def get_llm_judgment(pair):
         resp_text = response.choices[0].message.content.strip()
         
         # 嘗試解析 JSON 內容
-        # 移除可能夾帶的 ```json  ``` 區塊
         clean_json_str = resp_text
         if "```" in resp_text:
             match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", resp_text, re.DOTALL)
             if match:
                 clean_json_str = match.group(1)
             else:
-                # 簡單清理
                 clean_json_str = resp_text.replace("```json", "").replace("```", "").strip()
         
-        # 硬性防禦機制：如果模型在 JSON 中使用了非法的未轉義雙引號
-        # 這邊我們先把常見的 Markdown 程式碼區塊標記徹底移除
         clean_json_str = clean_json_str.strip()
         
         try:
             judgment = json.loads(clean_json_str)
         except json.JSONDecodeError:
-            # 進一步容錯：很多時候是 reasoning 的雙引號或者是換行符號問題。
-            # 我們嘗試用更寬鬆的正則表達式把 match_level 與 risk_factor 撈出來
-            match_level_found = "Uncertain"
-            risk_factor_found = ""
+            name_match_found = "不同"
+            address_match_found = "完全不同"
             reasoning_found = "解析失敗，改由正則提取"
             
-            lvl_match = re.search(r'"match_level"\s*:\s*"([^"]+)"', clean_json_str, re.I)
-            rf_match = re.search(r'"risk_factor"\s*:\s*"([^"]+)"', clean_json_str, re.I)
-            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:match_level|risk_factor)"', clean_json_str, re.DOTALL | re.I)
+            nm_match = re.search(r'"name_match"\s*:\s*"([^"]+)"', clean_json_str, re.I)
+            am_match = re.search(r'"address_match"\s*:\s*"([^"]+)"', clean_json_str, re.I)
+            reason_match = re.search(r'"reasoning"\s*:\s*"(.+?)"\s*,\s*"(?:name_match|address_match)"', clean_json_str, re.DOTALL | re.I)
             
-            if lvl_match:
-                match_level_found = lvl_match.group(1)
-            if rf_match:
-                risk_factor_found = rf_match.group(1)
+            if nm_match:
+                name_match_found = nm_match.group(1)
+            if am_match:
+                address_match_found = am_match.group(1)
             if reason_match:
                 reasoning_found = reason_match.group(1).replace('\\"', '"').replace('\n', ' ')
             else:
-                # 如果無法定位 reasoning 的結尾，就用原本的內容
                 reasoning_found = f"原始生成：{resp_text}"
                 
             judgment = {
                 "reasoning": reasoning_found,
-                "match_level": match_level_found,
-                "risk_factor": risk_factor_found
+                "name_match": name_match_found,
+                "address_match": address_match_found
             }
             
+        level, name_m, addr_m = determine_match_level(
+            judgment.get("name_match", "不同"),
+            judgment.get("address_match", "完全不同")
+        )
+        judgment["match_level"] = level
+        judgment["name_match"] = name_m
+        judgment["address_match"] = addr_m
+        
         return judgment
     except Exception as e:
         print(f"呼叫 LLM 發生錯誤: {e}. 原始回覆: {resp_text if 'resp_text' in locals() else ''}")
         return {
             "reasoning": f"解析 LLM 失敗：{str(e)}",
-            "match_level": "Uncertain",
-            "risk_factor": ""
+            "name_match": "不同",
+            "address_match": "完全不同",
+            "match_level": "Low"
         }
 
 def process_single_pair(pair, idx, total_count):
@@ -459,14 +481,9 @@ def process_single_pair(pair, idx, total_count):
     包裝單筆比對任務，用於多執行緒併發處理。
     """
     judgment = get_llm_judgment(pair)
-    match_level = judgment.get("match_level", "Uncertain")
-    raw_risk_factor = judgment.get("risk_factor", "")
-    
-    # 只有 High 與 Medium 才顯示風險判定依據，Low / False Positive / 其他一律為空字串
-    if match_level in ["High", "Medium"]:
-        risk_factor = raw_risk_factor if raw_risk_factor else ""
-    else:
-        risk_factor = ""
+    match_level = judgment.get("match_level", "Low")
+    name_match = judgment.get("name_match", "不同")
+    address_match = judgment.get("address_match", "完全不同")
 
     item = {
         "來源檔案": pair["source_file"],
@@ -481,7 +498,8 @@ def process_single_pair(pair, idx, total_count):
         "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
         "原XML命中率": f"{pair['xml_percentage']}%",
         "LLM研判等級": match_level,
-        "風險判定依據": risk_factor,
+        "公司名稱比對": name_match,
+        "地址比對": address_match,
         "LLM分析推理理由": judgment.get("reasoning", "無描述")
     }
     return item

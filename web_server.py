@@ -146,7 +146,7 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
                     <p><strong>完整資訊:</strong> {rec.get('黑名單完整資訊', '—')}</p>
                 </div>
             </div>
-            {f'<div class="risk-tag">風險判定依據：{rec.get("風險判定依據")}</div>' if rec.get("風險判定依據") else ''}
+            <div class="risk-tag">公司名稱：{rec.get("公司名稱比對", "—")} ｜ 地址比對：{rec.get("地址比對", "—")}</div>
             <div class="reasoning">
                 <strong>LLM 專家模型 Chain-of-Thought (CoT) 推理分析：</strong>
                 <p>{rec.get('LLM分析推理理由', '—')}</p>
@@ -407,8 +407,9 @@ def run_background_job_audit(job_id: str):
                 "黑名單地址": pair.get("party_address", ""),
                 "黑名單完整資訊": pair.get("party_content", ""),
                 "原XML命中率": f"{pair.get('xml_percentage', 0.0)}%",
-                "LLM研判等級": judgment.get("match_level", "False Positive"),
-                "風險判定依據": judgment.get("risk_factor", ""),
+                "LLM研判等級": judgment.get("match_level", "Low"),
+                "公司名稱比對": judgment.get("name_match", "不同"),
+                "地址比對": judgment.get("address_match", "完全不同"),
                 "LLM分析推理理由": judgment.get("reasoning", "")
             }
             results.append(row)
