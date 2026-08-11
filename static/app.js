@@ -61,7 +61,7 @@ function resetPageToInitialState() {
         last_updated: ""
     });
 
-    document.getElementById("file-status-text").textContent = "目前狀態: 乾淨初始狀態 (等待上傳 XML 報文檔案)";
+    document.getElementById("file-status-text").textContent = "等待上傳 XML 報文檔案";
     showEmptyState("當前畫面已清空，請上傳 XML 報文檔案開始進行合規審算");
 }
 

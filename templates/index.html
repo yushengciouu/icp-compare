@@ -1,16 +1,20 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICP-Compare 戰略出口合規審計平台</title>
+    <title>ICP-Compare 出口合規審計平台</title>
     <!-- Google Fonts & Lucide Icons -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+        rel="stylesheet">
     <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="/static/style.css">
 </head>
+
 <body class="dark-theme">
     <!-- 背景光圈與動態粒子效果 -->
     <div class="bg-glow blob-1"></div>
@@ -24,7 +28,7 @@
                 <div class="logo-icon"><i data-lucide="shield-check"></i></div>
                 <div class="brand-text">
                     <h1>ICP-Compare <span>Web</span></h1>
-                    <p>戰略性高科技貨品出口實體合規審計平台</p>
+                    <p>高科技貨品出口實體合規審計平台</p>
                 </div>
             </div>
 
@@ -90,23 +94,22 @@
         <section class="control-panel glass-card">
             <div class="panel-header">
                 <h3><i data-lucide="upload-cloud"></i> 批次 XML 出口報單/實體清冊上傳與審算</h3>
-                <span class="file-status" id="file-status-text">目前對接資料來源: testfile/*.xml</span>
+                <span class="file-status" id="file-status-text">等待上傳 XML 報文檔案</span>
             </div>
 
             <div class="panel-body">
                 <div class="drop-zone" id="drop-zone">
                     <i data-lucide="folder-up" class="drop-icon"></i>
                     <p class="drop-title">將 raw XML 報文檔案拖曳至此，或 <span>點擊上傳</span></p>
-                    <p class="drop-subtitle">支援自動辨識 Condition 及 Party 節點，自動過濾 &gt;= 75.0% 模糊命中對象</p>
                     <input type="file" id="file-input" multiple accept=".xml" hidden>
                 </div>
 
                 <div class="audit-action-box">
                     <button class="btn btn-hero" id="run-audit-btn">
                         <i data-lucide="play-circle"></i>
-                        <span>啟動全自動 LLM 合規審核</span>
+                        <span>啟動自動 LLM 合規審核</span>
                     </button>
-                    
+
                     <div class="progress-box hidden" id="progress-box">
                         <div class="progress-info">
                             <span id="progress-label">正在推理中...</span>
@@ -158,4 +161,5 @@
 
     <script src="/static/app.js"></script>
 </body>
+
 </html>
