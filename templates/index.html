@@ -57,14 +57,6 @@
                 </div>
             </div>
 
-            <div class="kpi-card glass-card border-release">
-                <div class="kpi-icon release"><i data-lucide="zap"></i></div>
-                <div class="kpi-info">
-                    <span class="kpi-label">自動放行率 (誤判率)</span>
-                    <h2 class="kpi-value highlight-green" id="kpi-rate">0.0%</h2>
-                </div>
-            </div>
-
             <div class="kpi-card glass-card border-high" id="kpi-card-high">
                 <div class="kpi-icon high"><i data-lucide="alert-triangle"></i></div>
                 <div class="kpi-info">
@@ -81,11 +73,11 @@
                 </div>
             </div>
 
-            <div class="kpi-card glass-card border-fp">
-                <div class="kpi-icon fp"><i data-lucide="check-circle-2"></i></div>
+            <div class="kpi-card glass-card border-low" id="kpi-card-low">
+                <div class="kpi-icon low"><i data-lucide="shield-check"></i></div>
                 <div class="kpi-info">
-                    <span class="kpi-label">🟢 False Positive (確定誤判)</span>
-                    <h2 class="kpi-value text-fp" id="kpi-fp">0</h2>
+                    <span class="kpi-label">🟡 Low 低風險 (建議放行)</span>
+                    <h2 class="kpi-value text-low" id="kpi-low">0</h2>
                 </div>
             </div>
         </section>
@@ -136,10 +128,7 @@
                     <i data-lucide="building"></i> 🟠 Medium 關聯企業 (<span id="count-medium">0</span>)
                 </button>
                 <button class="tab-btn tab-low" data-filter="Low">
-                    <i data-lucide="help-circle"></i> 🟡 Low 疑慮案件 (<span id="count-low">0</span>)
-                </button>
-                <button class="tab-btn tab-fp" data-filter="False Positive">
-                    <i data-lucide="shield-check"></i> 🟢 確定誤判放行 (<span id="count-fp">0</span>)
+                    <i data-lucide="shield-check"></i> 🟡 Low 低風險/可放行 (<span id="count-low">0</span>)
                 </button>
             </div>
 

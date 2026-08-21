@@ -31,7 +31,12 @@ async function initApp() {
             allRecords = data.records || [];
             updateKPIs(data.stats);
             if (allRecords.length === 0) {
-                showEmptyState("✅ 審算完成：上傳之 XML 報文全數合格（無命中率 >= 75% 之疑慮對照實體）");
+                showAllPassState(data.stats);
+                const statusEl = document.getElementById("file-status-text");
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="status-badge status-badge-pass"><i data-lucide="shield-check" style="width:14px;height:14px;display:inline;"></i> ✅ 審算完成：全數合格放行 (0 筆疑慮)</span>`;
+                    lucide.createIcons();
+                }
             } else {
                 renderCards();
             }
@@ -55,8 +60,6 @@ function resetPageToInitialState() {
         high: 0,
         medium: 0,
         low: 0,
-        fp: 0,
-        auto_release_rate: 0.0,
         file_name: "",
         last_updated: ""
     });
@@ -69,12 +72,12 @@ function updateKPIs(stats) {
     if (!stats) return;
     const highCount = Number(stats.high || 0);
     const mediumCount = Number(stats.medium || 0);
+    const lowCount = Number(stats.low || 0);
 
     document.getElementById("kpi-total").textContent = stats.total || 0;
-    document.getElementById("kpi-rate").textContent = `${stats.auto_release_rate || 0}%`;
     document.getElementById("kpi-high").textContent = highCount;
     document.getElementById("kpi-medium").textContent = mediumCount;
-    document.getElementById("kpi-fp").textContent = stats.fp || 0;
+    document.getElementById("kpi-low").textContent = lowCount;
 
     // 動態警示發光邏輯：僅在非 0 時觸發發光
     const highCard = document.getElementById("kpi-card-high");
@@ -98,8 +101,7 @@ function updateKPIs(stats) {
     document.getElementById("count-all").textContent = stats.total || 0;
     document.getElementById("count-high").textContent = highCount;
     document.getElementById("count-medium").textContent = mediumCount;
-    document.getElementById("count-low").textContent = stats.low || 0;
-    document.getElementById("count-fp").textContent = stats.fp || 0;
+    document.getElementById("count-low").textContent = lowCount;
     
     if (stats.file_name) {
         document.getElementById("file-status-text").textContent = `任務備忘: ${stats.file_name} (${stats.last_updated})`;
@@ -152,7 +154,6 @@ function getBadgeClass(level) {
         case "High": return "badge-high";
         case "Medium": return "badge-medium";
         case "Low": return "badge-low";
-        case "False Positive": return "badge-fp";
         default: return "badge-low";
     }
 }
@@ -161,8 +162,7 @@ function getBadgeLabel(level) {
     switch (level) {
         case "High": return "🔴 High (同一實體/轉運風險)";
         case "Medium": return "🟠 Medium (關聯企業)";
-        case "Low": return "🟡 Low (疑慮)";
-        case "False Positive": return "🟢 False Positive (確定誤判)";
+        case "Low": return "🟡 Low (低風險/可放行)";
         default: return level;
     }
 }
@@ -233,7 +233,7 @@ function createCardElement(rec, index) {
                     <span>建議處置：<strong>人工二審</strong></span>
                 </div>
             ` : ''}
-            ${(level === 'False Positive' || level === 'Low') ? `
+            ${level === 'Low' ? `
                 <div class="suggestion-tag suggestion-pass">
                     <i data-lucide="check-circle" style="width:15px;height:15px;"></i>
                     <span>建議處置：<strong>自動放行</strong></span>
@@ -328,7 +328,8 @@ async function handleFileUpload(files) {
         formData.append("files", f);
     }
 
-    const uploadUrl = currentJobId ? `/api/upload?job_id=${currentJobId}` : "/api/upload";
+    // 每次上傳新檔案時，產生全新 job_id 進行完整隔離，避免受到上一輪歷史分析干擾
+    const uploadUrl = "/api/upload";
 
     try {
         const res = await fetch(uploadUrl, { method: "POST", body: formData });
@@ -337,8 +338,12 @@ async function handleFileUpload(files) {
         if (data.status === "success" && data.job_id) {
             currentJobId = data.job_id;
             sessionStorage.setItem("currentJobId", currentJobId);
-            document.getElementById("file-status-text").textContent = `已成功上傳 ${data.uploaded.length} 個檔案 (任務 ID: ${currentJobId})`;
-            showToast(data.message || "上傳完成！點擊「啟動全自動 LLM 合規審核」即可進行比對。");
+            
+            const statusEl = document.getElementById("file-status-text");
+            statusEl.innerHTML = `<span class="status-badge status-badge-ready"><i data-lucide="file-check" style="width:14px;height:14px;display:inline;"></i> 已上傳 ${data.uploaded.length} 個檔案 (就緒待審)</span>`;
+            
+            showEmptyState("檔案已上傳就緒！請點擊上方「啟動自動 LLM 合規審核」開始進行比對", "ready");
+            showToast(`已成功上傳 ${data.uploaded.length} 個 XML 檔案！點擊「啟動自動 LLM 合規審核」即可進行比對。`, "info");
         }
     } catch (err) {
         showToast("上傳失敗: " + err.message, "error");
@@ -382,8 +387,12 @@ async function startAudit() {
                 clearInterval(interval);
                 btn.disabled = false;
                 progressBox.classList.add("hidden");
-                showToast("合規審核作業完成！已更新最新數據。");
                 await initApp();
+                if (allRecords.length === 0) {
+                    showToast("🎉 合規審算完成！本批次 XML 全數合格放行，無任何疑慮實體。", "success");
+                } else {
+                    showToast(`合規審查作業完成！共檢出 ${allRecords.length} 筆比對紀錄。`, "info");
+                }
             }
         }, 1500);
 
@@ -394,12 +403,75 @@ async function startAudit() {
     }
 }
 
-function showEmptyState(msg) {
+function showAllPassState(stats) {
     const container = document.getElementById("cards-container");
+    const fileName = (stats && stats.file_name) ? stats.file_name : "XML 報文批次";
+    const updateTime = (stats && stats.last_updated) ? stats.last_updated : new Date().toLocaleString();
+
+    container.innerHTML = `
+        <div class="all-pass-card glass-card">
+            <div class="pass-icon-glow">
+                <i data-lucide="shield-check"></i>
+            </div>
+            <div class="pass-content">
+                <div class="pass-badge">
+                    <i data-lucide="check-circle-2" style="width: 14px; height: 14px;"></i>
+                    合規判定：100% 全數合格通過 (Pass)
+                </div>
+                <h2>🎉 合規審核完成：未命中任何限制實體！</h2>
+                <p class="pass-desc">
+                    本批次所上傳之 XML 報文檔案，經廣域模糊篩選比對結果<strong>全數低於 75% 警戒門檻</strong>，無任何高風險 (High) 或中風險 (Medium) 限制黑名單疑慮實體，<strong>可安心直接放行</strong>。
+                </p>
+                <div class="pass-meta-grid">
+                    <div class="meta-item">
+                        <span class="meta-label"><i data-lucide="file-text" style="width:13px;height:13px;display:inline;"></i> 任務報表名稱</span>
+                        <span class="meta-val">${escapeHtml(fileName)}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label"><i data-lucide="clock" style="width:13px;height:13px;display:inline;"></i> 審算完成時間</span>
+                        <span class="meta-val">${escapeHtml(updateTime)}</span>
+                    </div>
+                    <div class="meta-item">
+                        <span class="meta-label"><i data-lucide="file-check" style="width:13px;height:13px;display:inline;"></i> 存查憑證狀態</span>
+                        <span class="meta-val text-green">✅ 已產出 0 疑慮合格證明 Excel 報表</span>
+                    </div>
+                </div>
+                <div class="pass-actions">
+                    <button class="btn btn-primary" id="pass-export-excel-btn">
+                        <i data-lucide="file-spreadsheet"></i> 匯出合格存查 Excel 報表
+                    </button>
+                    <button class="btn btn-outline" id="pass-export-html-btn">
+                        <i data-lucide="file-code"></i> 匯出 HTML 視覺化證明
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const dlExcel = document.getElementById("pass-export-excel-btn");
+    if (dlExcel) {
+        dlExcel.addEventListener("click", () => {
+            document.getElementById("download-excel-btn").click();
+        });
+    }
+    const dlHtml = document.getElementById("pass-export-html-btn");
+    if (dlHtml) {
+        dlHtml.addEventListener("click", () => {
+            document.getElementById("download-html-btn").click();
+        });
+    }
+
+    lucide.createIcons();
+}
+
+function showEmptyState(msg, type = "info") {
+    const container = document.getElementById("cards-container");
+    const iconName = type === "ready" ? "arrow-up-circle" : "inbox";
+    const iconColor = type === "ready" ? "var(--color-accent-blue)" : "var(--text-muted)";
     container.innerHTML = `
         <div class="loading-state">
-            <i data-lucide="alert-circle" style="width: 48px; height: 48px; color: var(--color-medium);"></i>
-            <p style="margin-top: 12px;">${escapeHtml(msg)}</p>
+            <i data-lucide="${iconName}" style="width: 52px; height: 52px; color: ${iconColor}; opacity: 0.85;"></i>
+            <p style="margin-top: 14px; font-size: 0.95rem; color: var(--text-main); font-weight: 500;">${escapeHtml(msg)}</p>
         </div>
     `;
     lucide.createIcons();
@@ -434,27 +506,34 @@ function showToast(message, type = "info") {
     }
 
     const toast = document.createElement("div");
+    const isSuccess = type === "success";
+    const isError = type === "error";
+
+    const bgColor = isSuccess ? "rgba(6, 78, 59, 0.95)" : isError ? "rgba(220, 38, 38, 0.92)" : "rgba(30, 41, 59, 0.92)";
+    const borderColor = isSuccess ? "rgba(52, 211, 153, 0.7)" : isError ? "rgba(248, 113, 113, 0.5)" : "rgba(96, 165, 250, 0.3)";
+    const glowColor = isSuccess ? "0 10px 30px rgba(16, 185, 129, 0.4)" : "0 10px 25px rgba(0, 0, 0, 0.5)";
+
     toast.style.cssText = `
-        background: ${type === "error" ? "rgba(220, 38, 38, 0.92)" : "rgba(30, 41, 59, 0.92)"};
+        background: ${bgColor};
         color: #ffffff;
-        padding: 12px 20px;
-        border-radius: 8px;
-        border: 1px solid ${type === "error" ? "rgba(248, 113, 113, 0.5)" : "rgba(96, 165, 250, 0.3)"};
-        backdrop-filter: blur(8px);
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-        font-size: 0.9rem;
-        font-weight: 500;
+        padding: 14px 22px;
+        border-radius: 10px;
+        border: 1px solid ${borderColor};
+        backdrop-filter: blur(12px);
+        box-shadow: ${glowColor};
+        font-size: 0.92rem;
+        font-weight: 600;
         display: flex;
         align-items: center;
-        gap: 10px;
+        gap: 12px;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         opacity: 0;
         transform: translateY(-12px);
         pointer-events: auto;
     `;
     
-    const iconName = type === "error" ? "alert-circle" : "check-circle";
-    toast.innerHTML = `<i data-lucide="${iconName}" style="width:18px;height:18px;flex-shrink:0;"></i><span>${escapeHtml(message)}</span>`;
+    const iconName = isSuccess ? "shield-check" : isError ? "alert-circle" : "info";
+    toast.innerHTML = `<i data-lucide="${iconName}" style="width:20px;height:20px;flex-shrink:0;${isSuccess ? 'color:#34D399;' : ''}"></i><span>${escapeHtml(message)}</span>`;
     toastContainer.appendChild(toast);
     lucide.createIcons();
 
@@ -467,5 +546,5 @@ function showToast(message, type = "info") {
         toast.style.opacity = "0";
         toast.style.transform = "translateY(-12px)";
         setTimeout(() => toast.remove(), 300);
-    }, 3200);
+    }, 4200);
 }

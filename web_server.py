@@ -90,69 +90,74 @@ def calculate_stats(records: List[Dict[str, Any]], file_name: str, mod_time: str
     high_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "High")
     medium_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "Medium")
     low_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "Low")
-    fp_count = sum(1 for r in records if str(r.get("LLM研判等級", "")).strip() == "False Positive")
-    auto_release_rate = round((fp_count / total * 100), 1) if total > 0 else 0.0
     return {
         "total": total,
         "high": high_count,
         "medium": medium_count,
         "low": low_count,
-        "fp": fp_count,
-        "auto_release_rate": auto_release_rate,
         "file_name": file_name,
         "last_updated": mod_time
     }
 
 def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], output_path: Path):
     """生成單一獨立、可離線開啟且支援即時篩選與搜尋的 HTML 視覺化合規審計報告"""
-    cards_html = ""
-    for idx, rec in enumerate(records, 1):
-        level = str(rec.get("LLM研判等級", "")).strip()
-        badge_class = "badge-high" if level == "High" else "badge-medium" if level == "Medium" else "badge-low" if level == "Low" else "badge-fp"
-        badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟡 Low (疑慮)" if level == "Low" else "🟢 False Positive (確定誤判)"
-        
-        search_text = (
-            str(rec.get("查詢名稱", "")) +
-            str(rec.get("黑名單名稱", "")) +
-            str(rec.get("條件ID", "")) +
-            str(rec.get("黑名單ID", "")) +
-            str(rec.get("查詢地址", "")) +
-            str(rec.get("黑名單地址", "")) +
-            str(rec.get("查詢國家", ""))
-        ).lower().replace('"', '&quot;')
-
-        cards_html += f"""
-        <div class="card" data-level="{level}" data-search="{search_text}">
-            <div class="card-header">
-                <div class="case-title">#{idx:02d} {rec.get('查詢名稱', '—')} ⇄ {rec.get('黑名單名稱', '—')}</div>
-                <div>
-                    <span class="pct">{rec.get('原XML命中率', '—')}</span>
-                    <span class="badge {badge_class}">{badge_label}</span>
-                </div>
-            </div>
-            <div class="grid">
-                <div class="box">
-                    <h4>查詢實體 (Condition)</h4>
-                    <p><strong>條件ID:</strong> {rec.get('條件ID', '—')}</p>
-                    <p><strong>名稱:</strong> {rec.get('查詢名稱', '—')}</p>
-                    <p><strong>國家/城市:</strong> {rec.get('查詢國家', '—')} / {rec.get('查詢城市', '—')}</p>
-                    <p><strong>地址:</strong> {rec.get('查詢地址', '—')}</p>
-                </div>
-                <div class="box">
-                    <h4>黑名單限制實體 (Party)</h4>
-                    <p><strong>黑名單ID:</strong> {rec.get('黑名單ID', '—')}</p>
-                    <p><strong>名稱:</strong> {rec.get('黑名單名稱', '—')}</p>
-                    <p><strong>地址:</strong> {rec.get('黑名單地址', '—')}</p>
-                    <p><strong>完整資訊:</strong> {rec.get('黑名單完整資訊', '—')}</p>
-                </div>
-            </div>
-            <div class="risk-tag">公司名稱：{rec.get("公司名稱比對", "—")} ｜ 地址比對：{rec.get("地址比對", "—")}</div>
-            <div class="reasoning">
-                <strong>LLM 專家模型 Chain-of-Thought (CoT) 推理分析：</strong>
-                <p>{rec.get('LLM分析推理理由', '—')}</p>
-            </div>
+    if not records:
+        cards_html = """
+        <div class="card" style="text-align: center; padding: 48px 20px;">
+            <div style="font-size: 2.5rem; margin-bottom: 12px;">✅</div>
+            <h3 style="color: #10B981; margin: 0 0 8px 0; font-size: 1.2rem;">本批次 XML 報文全數合格</h3>
+            <p style="color: #94A3B8; font-size: 0.88rem; margin: 0;">經比對未檢出任何命中率 >= 75% 之限制黑名單疑慮實體。</p>
         </div>
         """
+    else:
+        cards_html = ""
+        for idx, rec in enumerate(records, 1):
+            level = str(rec.get("LLM研判等級", "")).strip()
+            badge_class = "badge-high" if level == "High" else "badge-medium" if level == "Medium" else "badge-low"
+            badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟡 Low (低風險/可放行)"
+            
+            search_text = (
+                str(rec.get("查詢名稱", "")) +
+                str(rec.get("黑名單名稱", "")) +
+                str(rec.get("條件ID", "")) +
+                str(rec.get("黑名單ID", "")) +
+                str(rec.get("查詢地址", "")) +
+                str(rec.get("黑名單地址", "")) +
+                str(rec.get("查詢國家", ""))
+            ).lower().replace('"', '&quot;')
+
+            cards_html += f"""
+            <div class="card" data-level="{level}" data-search="{search_text}">
+                <div class="card-header">
+                    <div class="case-title">#{idx:02d} {rec.get('查詢名稱', '—')} ⇄ {rec.get('黑名單名稱', '—')}</div>
+                    <div>
+                        <span class="pct">{rec.get('原XML命中率', '—')}</span>
+                        <span class="badge {badge_class}">{badge_label}</span>
+                    </div>
+                </div>
+                <div class="grid">
+                    <div class="box">
+                        <h4>查詢實體 (Condition)</h4>
+                        <p><strong>條件ID:</strong> {rec.get('條件ID', '—')}</p>
+                        <p><strong>名稱:</strong> {rec.get('查詢名稱', '—')}</p>
+                        <p><strong>國家/城市:</strong> {rec.get('查詢國家', '—')} / {rec.get('查詢城市', '—')}</p>
+                        <p><strong>地址:</strong> {rec.get('查詢地址', '—')}</p>
+                    </div>
+                    <div class="box">
+                        <h4>黑名單限制實體 (Party)</h4>
+                        <p><strong>黑名單ID:</strong> {rec.get('黑名單ID', '—')}</p>
+                        <p><strong>名稱:</strong> {rec.get('黑名單名稱', '—')}</p>
+                        <p><strong>地址:</strong> {rec.get('黑名單地址', '—')}</p>
+                        <p><strong>完整資訊:</strong> {rec.get('黑名單完整資訊', '—')}</p>
+                    </div>
+                </div>
+                <div class="risk-tag">公司名稱：{rec.get("公司名稱比對", "—")} ｜ 地址比對：{rec.get("地址比對", "—")}</div>
+                <div class="reasoning">
+                    <strong>LLM 專家模型 Chain-of-Thought (CoT) 推理分析：</strong>
+                    <p>{rec.get('LLM分析推理理由', '—')}</p>
+                </div>
+            </div>
+            """
         
     high_count = int(stats.get('high', 0))
     medium_count = int(stats.get('medium', 0))
@@ -246,10 +251,9 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
     
     <div class="kpis">
         <div class="kpi"><span>總掃描對數</span><h2>{stats.get('total', 0)}</h2></div>
-        <div class="kpi"><span>自動放行率</span><h2 style="color: #10B981;">{stats.get('auto_release_rate', 0)}%</h2></div>
         <div class="{high_kpi_class}"><span>🔴 High 高風險</span><h2 style="color: #EF4444;">{high_count}</h2></div>
         <div class="{medium_kpi_class}"><span>🟠 Medium 關聯企業</span><h2 style="color: #F59E0B;">{medium_count}</h2></div>
-        <div class="kpi"><span>🟢 False Positive</span><h2 style="color: #10B981;">{stats.get('fp', 0)}</h2></div>
+        <div class="kpi"><span>🟡 Low 低風險/可放行</span><h2 style="color: #10B981;">{stats.get('low', 0)}</h2></div>
     </div>
     
     <section class="filter-section">
@@ -257,8 +261,7 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
             <button class="tab-btn active" onclick="selectTab(this, 'ALL')">全部案件 ({stats.get('total', 0)})</button>
             <button class="tab-btn tab-high" onclick="selectTab(this, 'High')">🔴 High 高風險 ({stats.get('high', 0)})</button>
             <button class="tab-btn tab-medium" onclick="selectTab(this, 'Medium')">🟠 Medium 關聯企業 ({stats.get('medium', 0)})</button>
-            <button class="tab-btn tab-low" onclick="selectTab(this, 'Low')">🟡 Low 疑慮 ({stats.get('low', 0)})</button>
-            <button class="tab-btn tab-fp" onclick="selectTab(this, 'False Positive')">🟢 確定誤判 ({stats.get('fp', 0)})</button>
+            <button class="tab-btn tab-low" onclick="selectTab(this, 'Low')">🟡 Low 低風險/可放行 ({stats.get('low', 0)})</button>
         </div>
         <div class="search-box">
             <input type="text" id="search-input" placeholder="搜尋實體名稱、條件 ID、地址或國家..." oninput="filterCards()">
@@ -308,10 +311,16 @@ async def upload_xml_files(files: List[UploadFile] = File(...), job_id: Optional
     job_path = get_job_dir(job_id)
     upload_dir = job_path / "uploads"
     
-    # 清空該 job 之前的上傳舊檔
+    # 清空該 job 之前的上傳舊檔與舊產出報表
     for old_file in upload_dir.glob("*.xml"):
         try:
             old_file.unlink()
+        except Exception:
+            pass
+            
+    for old_report in job_path.glob("ICP_Audit_Report_*.*"):
+        try:
+            old_report.unlink()
         except Exception:
             pass
             
@@ -364,20 +373,36 @@ def run_background_job_audit(job_id: str):
         all_pairs.extend(pairs)
         
     if not all_pairs:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_name = f"ICP_Audit_Report_{timestamp}.xlsx"
+        output_excel = job_path / report_name
+        
+        columns = [
+            "來源檔案", "條件ID", "查詢名稱", "查詢國家", "查詢城市", "查詢地址",
+            "黑名單ID", "黑名單名稱", "黑名單地址", "黑名單完整資訊",
+            "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對", "LLM分析推理理由"
+        ]
+        source_names = ", ".join(os.path.basename(f) for f in xml_files) if xml_files else "—"
+        pass_row = {col: "—" for col in columns}
+        pass_row["來源檔案"] = source_names
+        pass_row["LLM研判等級"] = "Pass (合格)"
+        pass_row["LLM分析推理理由"] = "全數合格：本批次上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
+        
+        df = pd.DataFrame([pass_row])
+        df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
+        
         mod_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         job_info["is_running"] = False
         job_info["progress"] = 100
         job_info["last_completed_at"] = mod_time
-        job_info["last_report"] = "無 75% 以上命中疑慮紀錄"
+        job_info["last_report"] = report_name
         job_info["records"] = []
         job_info["stats"] = {
             "total": 0,
             "high": 0,
             "medium": 0,
             "low": 0,
-            "fp": 0,
-            "auto_release_rate": 100.0,
-            "file_name": "無命中率 >= 75% 疑慮實體",
+            "file_name": report_name,
             "last_updated": mod_time
         }
         return

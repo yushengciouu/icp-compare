@@ -75,9 +75,9 @@ uv sync
 uv run python web_server.py
 ```
 啟動後於瀏覽器存取 **`http://localhost:8000`** 即可進入圖形化審計平台：
-* 📊 **合規 KPI 儀表板**：即時統計總掃描對數、自動放行率 (%)、High / Medium 風險數量。
+* 📊 **合規 KPI 儀表板**：即時統計總掃描對數、🔴 High / 🟠 Medium / 🟡 Low 各級案件數量。
 * 📥 **拖曳上傳與啟動**：支援直覺式 Drag-and-Drop 批次上傳 XML 報文並即時監控推論進度。
-* 🎴 **互動式審計卡片**：內建風險頁籤切換（🔴 High / 🟠 Medium / 🟢 FP）與關鍵字即時搜尋。
+* 🎴 **互動式審計卡片**：內建風險頁籤切換（🔴 High / 🟠 Medium / 🟡 Low）與關鍵字即時搜尋。
 * 📜 **電子合規憑證 (Audit Trail)**：可開啟單筆案件的完整 Chain-of-Thought 推理證明彈窗。
 * 📥 **一鍵匯出 Excel 報表**。
 

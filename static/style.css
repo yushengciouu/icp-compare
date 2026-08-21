@@ -214,10 +214,9 @@ body {
 
 /* 一般平時卡片樣式：無彩色邊框、不發光、沉穩低調 */
 .border-total,
-.border-release,
-.border-fp,
 .border-high,
-.border-medium { 
+.border-medium,
+.border-low { 
     background: rgba(15, 23, 42, 0.6);
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: none;
@@ -276,8 +275,7 @@ body {
 .kpi-icon i { width: 24px; height: 24px; }
 /* 低調不發光的圖示底色 */
 .kpi-icon.total { background: rgba(255, 255, 255, 0.05); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.08); }
-.kpi-icon.release { background: rgba(255, 255, 255, 0.05); color: #34D399; border: 1px solid rgba(255, 255, 255, 0.08); }
-.kpi-icon.fp { background: rgba(255, 255, 255, 0.05); color: #34D399; border: 1px solid rgba(255, 255, 255, 0.08); }
+.kpi-icon.low { background: rgba(16, 185, 129, 0.15); color: #34D399; border: 1px solid rgba(16, 185, 129, 0.25); }
 /* 醒目的高低風險Icon */
 .kpi-icon.high { background: rgba(239, 68, 68, 0.2); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); }
 .kpi-icon.medium { background: rgba(245, 158, 11, 0.2); color: #FDE68A; border: 1px solid rgba(245, 158, 11, 0.35); }
@@ -301,10 +299,9 @@ body {
     letter-spacing: -0.5px;
     color: #FFFFFF;
 }
-.highlight-green { color: #34D399; }
 .text-high { color: #FCA5A5; }
 .text-medium { color: #FDE68A; }
-.text-fp { color: #6EE7B7; }
+.text-low { color: #6EE7B7; }
 
 /* 3. Upload & Control Panel */
 .control-panel {
@@ -689,3 +686,149 @@ body {
     margin-bottom: 12px;
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* 狀態標籤 (Status Badges in Header & Panel) */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-weight: 600;
+}
+.status-badge-ready {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60A5FA;
+    border: 1px solid rgba(59, 130, 246, 0.35);
+}
+.status-badge-pass {
+    background: rgba(16, 185, 129, 0.18);
+    color: #34D399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    box-shadow: 0 0 12px rgba(16, 185, 129, 0.25);
+}
+
+/* 6. 全數合格通過醒目大卡片 (All Pass Banner Card) */
+.all-pass-card {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    padding: 36px 40px;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.15) 0%, rgba(15, 23, 42, 0.85) 100%);
+    border: 1.5px solid rgba(16, 185, 129, 0.45);
+    border-radius: 20px;
+    box-shadow: 0 12px 40px rgba(16, 185, 129, 0.18);
+    animation: passFadeIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-bottom: 24px;
+}
+@keyframes passFadeIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+.pass-icon-glow {
+    width: 88px;
+    height: 88px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.12) 100%);
+    border: 2px solid rgba(16, 185, 129, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #10B981;
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.45), inset 0 0 15px rgba(16, 185, 129, 0.2);
+    flex-shrink: 0;
+    animation: passIconPulse 3s infinite ease-in-out;
+}
+@keyframes passIconPulse {
+    0%, 100% { box-shadow: 0 0 25px rgba(16, 185, 129, 0.35); }
+    50% { box-shadow: 0 0 45px rgba(16, 185, 129, 0.7); }
+}
+.pass-icon-glow i {
+    width: 46px;
+    height: 46px;
+}
+
+.pass-content {
+    flex: 1;
+}
+.pass-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(16, 185, 129, 0.2);
+    color: #34D399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.82rem;
+    font-weight: 700;
+    margin-bottom: 12px;
+}
+.pass-content h2 {
+    font-family: var(--font-heading);
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #FFFFFF;
+    margin-bottom: 8px;
+    letter-spacing: -0.3px;
+}
+.pass-desc {
+    font-size: 0.92rem;
+    color: #CBD5E1;
+    line-height: 1.6;
+    margin-bottom: 18px;
+}
+.pass-desc strong {
+    color: #34D399;
+}
+
+.pass-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    padding: 12px 18px;
+    margin-bottom: 20px;
+}
+.meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.meta-label {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.meta-val {
+    font-size: 0.88rem;
+    color: #FFFFFF;
+    font-weight: 600;
+}
+.meta-val.text-green {
+    color: #34D399;
+}
+.pass-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+    .all-pass-card {
+        flex-direction: column;
+        text-align: center;
+        padding: 24px;
+        gap: 20px;
+    }
+    .pass-actions {
+        justify-content: center;
+    }
+}
