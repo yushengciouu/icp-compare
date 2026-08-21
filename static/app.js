@@ -65,6 +65,14 @@ function resetPageToInitialState() {
     });
 
     document.getElementById("file-status-text").textContent = "等待上傳 XML 報文檔案";
+    const mergedBtn = document.getElementById("download-excel-merged-btn");
+    if (mergedBtn) {
+        mergedBtn.innerHTML = `<i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表`;
+    }
+    const splitBtn = document.getElementById("download-excel-split-btn");
+    if (splitBtn) {
+        splitBtn.style.display = "none";
+    }
     showEmptyState("當前畫面已清空，請上傳 XML 報文檔案開始進行合規審算");
 }
 
@@ -105,6 +113,25 @@ function updateKPIs(stats) {
     
     if (stats.file_name) {
         document.getElementById("file-status-text").textContent = `任務備忘: ${stats.file_name} (${stats.last_updated})`;
+    }
+
+    const reportCount = Number(stats.report_count || 1);
+    const mergedBtn = document.getElementById("download-excel-merged-btn");
+    const splitBtn = document.getElementById("download-excel-split-btn");
+    if (mergedBtn) {
+        if (reportCount > 1) {
+            mergedBtn.innerHTML = `<i data-lucide="file-spreadsheet"></i> 匯出合併總 Excel`;
+            if (splitBtn) {
+                splitBtn.style.display = "inline-flex";
+                splitBtn.innerHTML = `<i data-lucide="file-archive"></i> 匯出各檔案 Excel (${reportCount} 份 ZIP)`;
+            }
+        } else {
+            mergedBtn.innerHTML = `<i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表`;
+            if (splitBtn) {
+                splitBtn.style.display = "none";
+            }
+        }
+        lucide.createIcons();
     }
 }
 
@@ -284,14 +311,29 @@ function setupEventListeners() {
         });
     }
 
-    // 下載 Excel 報表
-    document.getElementById("download-excel-btn").addEventListener("click", () => {
-        if (!currentJobId) {
-            showToast("當前無可供下載的審計報表，請先上傳檔案並執行審算", "error");
-            return;
-        }
-        window.location.href = `/api/reports/download?job_id=${currentJobId}`;
-    });
+    // 下載合併總 Excel 報表
+    const downloadMergedBtn = document.getElementById("download-excel-merged-btn");
+    if (downloadMergedBtn) {
+        downloadMergedBtn.addEventListener("click", () => {
+            if (!currentJobId) {
+                showToast("當前無可供下載的審計報表，請先上傳檔案並執行審算", "error");
+                return;
+            }
+            window.location.href = `/api/reports/download?job_id=${currentJobId}&mode=merged`;
+        });
+    }
+
+    // 下載個別檔案 Excel (ZIP 壓縮包)
+    const downloadSplitBtn = document.getElementById("download-excel-split-btn");
+    if (downloadSplitBtn) {
+        downloadSplitBtn.addEventListener("click", () => {
+            if (!currentJobId) {
+                showToast("當前無可供下載的審計報表，請先上傳檔案並執行審算", "error");
+                return;
+            }
+            window.location.href = `/api/reports/download?job_id=${currentJobId}&mode=individual`;
+        });
+    }
 
     // 啟動審核
     document.getElementById("run-audit-btn").addEventListener("click", startAudit);
@@ -407,6 +449,26 @@ function showAllPassState(stats) {
     const container = document.getElementById("cards-container");
     const fileName = (stats && stats.file_name) ? stats.file_name : "XML 報文批次";
     const updateTime = (stats && stats.last_updated) ? stats.last_updated : new Date().toLocaleString();
+    const reportCount = Number(stats && stats.report_count ? stats.report_count : 1);
+
+    const actionButtonsHtml = reportCount > 1 ? `
+        <button class="btn btn-primary" id="pass-export-merged-btn">
+            <i data-lucide="file-spreadsheet"></i> 匯出合併總 Excel (全 ${reportCount} 檔整合)
+        </button>
+        <button class="btn btn-outline" id="pass-export-split-btn" style="background: rgba(59, 130, 246, 0.15); color: #93C5FD; border-color: rgba(59, 130, 246, 0.4);">
+            <i data-lucide="file-archive"></i> 匯出各檔案獨立 Excel (共 ${reportCount} 份打包 .ZIP)
+        </button>
+        <button class="btn btn-outline" id="pass-export-html-btn">
+            <i data-lucide="file-code"></i> 匯出 HTML 視覺化證明
+        </button>
+    ` : `
+        <button class="btn btn-primary" id="pass-export-merged-btn">
+            <i data-lucide="file-spreadsheet"></i> 匯出合格存查 Excel 報表
+        </button>
+        <button class="btn btn-outline" id="pass-export-html-btn">
+            <i data-lucide="file-code"></i> 匯出 HTML 視覺化證明
+        </button>
+    `;
 
     container.innerHTML = `
         <div class="all-pass-card glass-card">
@@ -424,7 +486,7 @@ function showAllPassState(stats) {
                 </p>
                 <div class="pass-meta-grid">
                     <div class="meta-item">
-                        <span class="meta-label"><i data-lucide="file-text" style="width:13px;height:13px;display:inline;"></i> 任務報表名稱</span>
+                        <span class="meta-label"><i data-lucide="file-text" style="width:13px;height:13px;display:inline;"></i> 任務報表</span>
                         <span class="meta-val">${escapeHtml(fileName)}</span>
                     </div>
                     <div class="meta-item">
@@ -433,31 +495,35 @@ function showAllPassState(stats) {
                     </div>
                     <div class="meta-item">
                         <span class="meta-label"><i data-lucide="file-check" style="width:13px;height:13px;display:inline;"></i> 存查憑證狀態</span>
-                        <span class="meta-val text-green">✅ 已產出 0 疑慮合格證明 Excel 報表</span>
+                        <span class="meta-val text-green">✅ 已產出合併總表與 ${reportCount} 份個別合格 Excel 報表</span>
                     </div>
                 </div>
                 <div class="pass-actions">
-                    <button class="btn btn-primary" id="pass-export-excel-btn">
-                        <i data-lucide="file-spreadsheet"></i> 匯出合格存查 Excel 報表
-                    </button>
-                    <button class="btn btn-outline" id="pass-export-html-btn">
-                        <i data-lucide="file-code"></i> 匯出 HTML 視覺化證明
-                    </button>
+                    ${actionButtonsHtml}
                 </div>
             </div>
         </div>
     `;
 
-    const dlExcel = document.getElementById("pass-export-excel-btn");
-    if (dlExcel) {
-        dlExcel.addEventListener("click", () => {
-            document.getElementById("download-excel-btn").click();
+    const dlMerged = document.getElementById("pass-export-merged-btn");
+    if (dlMerged) {
+        dlMerged.addEventListener("click", () => {
+            const btn = document.getElementById("download-excel-merged-btn");
+            if (btn) btn.click();
+        });
+    }
+    const dlSplit = document.getElementById("pass-export-split-btn");
+    if (dlSplit) {
+        dlSplit.addEventListener("click", () => {
+            const btn = document.getElementById("download-excel-split-btn");
+            if (btn) btn.click();
         });
     }
     const dlHtml = document.getElementById("pass-export-html-btn");
     if (dlHtml) {
         dlHtml.addEventListener("click", () => {
-            document.getElementById("download-html-btn").click();
+            const btn = document.getElementById("download-html-btn");
+            if (btn) btn.click();
         });
     }
 

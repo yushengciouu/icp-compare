@@ -79,7 +79,7 @@ uv run python web_server.py
 * 📥 **拖曳上傳與啟動**：支援直覺式 Drag-and-Drop 批次上傳 XML 報文並即時監控推論進度。
 * 🎴 **互動式審計卡片**：內建風險頁籤切換（🔴 High / 🟠 Medium / 🟡 Low）與關鍵字即時搜尋。
 * 📜 **電子合規憑證 (Audit Trail)**：可開啟單筆案件的完整 Chain-of-Thought 推理證明彈窗。
-* 📥 **一鍵匯出 Excel 報表**。
+* 📥 **一鍵個別匯出 Excel 報表**：依據上傳的 XML 檔案數量自動分別產出對應的專屬 Excel 報表，多檔案時一鍵打包為 `.zip` 壓縮包下載。
 
 #### 🅱️ 靜默 Command-Line 批次執行
 ```bash

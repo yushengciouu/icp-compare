@@ -35,13 +35,16 @@
             <div class="system-status">
                 <div class="action-buttons">
                     <button class="btn btn-outline" id="reset-btn" title="清空當前頁面資料並恢復初始純淨狀態">
-                        <i data-lucide="trash-2"></i> 🧹 清空重置頁面
+                        <i data-lucide="trash-2"></i> 🧹 清空重置
                     </button>
-                    <button class="btn btn-outline" id="download-html-btn">
-                        <i data-lucide="file-code"></i> 匯出 HTML 視覺化報表
+                    <button class="btn btn-outline" id="download-html-btn" title="匯出單一離線 HTML 視覺化互動報告">
+                        <i data-lucide="file-code"></i> 匯出 HTML 報表
                     </button>
-                    <button class="btn btn-outline" id="download-excel-btn">
-                        <i data-lucide="file-spreadsheet"></i> 匯出 Excel 報表
+                    <button class="btn btn-outline" id="download-excel-merged-btn" title="將所有上傳檔案的比對結果合併於單一 Excel 總表">
+                        <i data-lucide="file-spreadsheet"></i> 匯出合併總 Excel
+                    </button>
+                    <button class="btn btn-outline" id="download-excel-split-btn" title="為每個上傳的 XML 檔案分別產出獨立 Excel 並打包為 ZIP" style="display: none;">
+                        <i data-lucide="file-archive"></i> 匯出各檔案 Excel (ZIP)
                     </button>
                 </div>
             </div>

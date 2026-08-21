@@ -5,6 +5,7 @@ import json
 import uuid
 import shutil
 import time
+import zipfile
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from datetime import datetime
@@ -372,41 +373,6 @@ def run_background_job_audit(job_id: str):
             p["source_file"] = os.path.basename(xml_file)
         all_pairs.extend(pairs)
         
-    if not all_pairs:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_name = f"ICP_Audit_Report_{timestamp}.xlsx"
-        output_excel = job_path / report_name
-        
-        columns = [
-            "來源檔案", "條件ID", "查詢名稱", "查詢國家", "查詢城市", "查詢地址",
-            "黑名單ID", "黑名單名稱", "黑名單地址", "黑名單完整資訊",
-            "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對", "LLM分析推理理由"
-        ]
-        source_names = ", ".join(os.path.basename(f) for f in xml_files) if xml_files else "—"
-        pass_row = {col: "—" for col in columns}
-        pass_row["來源檔案"] = source_names
-        pass_row["LLM研判等級"] = "Pass (合格)"
-        pass_row["LLM分析推理理由"] = "全數合格：本批次上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
-        
-        df = pd.DataFrame([pass_row])
-        df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
-        
-        mod_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        job_info["is_running"] = False
-        job_info["progress"] = 100
-        job_info["last_completed_at"] = mod_time
-        job_info["last_report"] = report_name
-        job_info["records"] = []
-        job_info["stats"] = {
-            "total": 0,
-            "high": 0,
-            "medium": 0,
-            "low": 0,
-            "file_name": report_name,
-            "last_updated": mod_time
-        }
-        return
-        
     job_info["total"] = len(all_pairs)
     job_info["completed"] = 0
     
@@ -414,47 +380,106 @@ def run_background_job_audit(job_id: str):
     from concurrent.futures import ThreadPoolExecutor, as_completed
     from compare_audit import MAX_WORKERS
     
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        future_to_pair = {executor.submit(get_llm_judgment, pair): pair for pair in all_pairs}
-        for future in as_completed(future_to_pair):
-            pair = future_to_pair[future]
-            judgment = future.result()
-            
-            row = {
-                "來源檔案": pair.get("source_file", ""),
-                "條件ID": pair.get("condition_id", ""),
-                "查詢名稱": pair.get("query_name", ""),
-                "查詢國家": pair.get("query_country", ""),
-                "查詢城市": pair.get("query_city", ""),
-                "查詢地址": pair.get("query_address", ""),
-                "黑名單ID": pair.get("party_id", ""),
-                "黑名單名稱": pair.get("party_name", ""),
-                "黑名單地址": pair.get("party_address", ""),
-                "黑名單完整資訊": pair.get("party_content", ""),
-                "原XML命中率": f"{pair.get('xml_percentage', 0.0)}%",
-                "LLM研判等級": judgment.get("match_level", "Low"),
-                "公司名稱比對": judgment.get("name_match", "不同"),
-                "地址比對": judgment.get("address_match", "完全不同"),
-                "LLM分析推理理由": judgment.get("reasoning", "")
-            }
-            results.append(row)
-            job_info["completed"] += 1
-            job_info["progress"] = int((job_info["completed"] / job_info["total"]) * 100)
-            
+    if all_pairs:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_pair = {executor.submit(get_llm_judgment, pair): pair for pair in all_pairs}
+            for future in as_completed(future_to_pair):
+                pair = future_to_pair[future]
+                judgment = future.result()
+                
+                row = {
+                    "來源檔案": pair.get("source_file", ""),
+                    "條件ID": pair.get("condition_id", ""),
+                    "查詢名稱": pair.get("query_name", ""),
+                    "查詢國家": pair.get("query_country", ""),
+                    "查詢城市": pair.get("query_city", ""),
+                    "查詢地址": pair.get("query_address", ""),
+                    "黑名單ID": pair.get("party_id", ""),
+                    "黑名單名稱": pair.get("party_name", ""),
+                    "黑名單地址": pair.get("party_address", ""),
+                    "黑名單完整資訊": pair.get("party_content", ""),
+                    "原XML命中率": f"{pair.get('xml_percentage', 0.0)}%",
+                    "LLM研判等級": judgment.get("match_level", "Low"),
+                    "公司名稱比對": judgment.get("name_match", "不同"),
+                    "地址比對": judgment.get("address_match", "完全不同"),
+                    "LLM分析推理理由": judgment.get("reasoning", "")
+                }
+                results.append(row)
+                job_info["completed"] += 1
+                job_info["progress"] = int((job_info["completed"] / job_info["total"]) * 100)
+    else:
+        job_info["progress"] = 100
+
+    # 1. 產出「全檔案合併總 Excel 報表」 (Consolidated Report)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    report_name = f"ICP_Audit_Report_{timestamp}.xlsx"
-    output_excel = job_path / report_name
+    columns = [
+        "來源檔案", "條件ID", "查詢名稱", "查詢國家", "查詢城市", "查詢地址",
+        "黑名單ID", "黑名單名稱", "黑名單地址", "黑名單完整資訊",
+        "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對", "LLM分析推理理由"
+    ]
     
-    df = pd.DataFrame(results)
-    df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
-    generate_formatted_excel_report(str(output_excel))
+    merged_report_name = f"ICP_Audit_Report_Consolidated_{timestamp}.xlsx"
+    merged_excel_path = job_path / merged_report_name
     
+    if results:
+        df_merged = pd.DataFrame(results)
+        df_merged.to_excel(merged_excel_path, sheet_name="全審計結果清單", index=False)
+        generate_formatted_excel_report(str(merged_excel_path))
+    else:
+        source_names = ", ".join(os.path.basename(f) for f in xml_files) if xml_files else "—"
+        pass_row = {col: "—" for col in columns}
+        pass_row["來源檔案"] = source_names
+        pass_row["LLM研判等級"] = "Pass (合格)"
+        pass_row["LLM分析推理理由"] = "全數合格：本批次上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
+        df_merged = pd.DataFrame([pass_row])
+        df_merged.to_excel(merged_excel_path, sheet_name="全審計結果清單", index=False)
+
+    # 2. 針對每一個上傳的 XML 檔案，個別產出專屬獨立 Excel 報表
+    generated_individual_reports = []
+    for xml_path_str in xml_files:
+        xml_fname = os.path.basename(xml_path_str)
+        stem = Path(xml_fname).stem.replace("_raw", "")
+        file_report_name = f"ICP_Audit_Report_{stem}_{timestamp}.xlsx"
+        output_excel = job_path / file_report_name
+        
+        file_results = [r for r in results if r.get("來源檔案") == xml_fname]
+        if file_results:
+            df = pd.DataFrame(file_results)
+            df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
+            generate_formatted_excel_report(str(output_excel))
+        else:
+            pass_row = {col: "—" for col in columns}
+            pass_row["來源檔案"] = xml_fname
+            pass_row["LLM研判等級"] = "Pass (合格)"
+            pass_row["LLM分析推理理由"] = f"全數合格：本檔案 ({xml_fname}) 上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
+            df = pd.DataFrame([pass_row])
+            df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
+            
+        generated_individual_reports.append(file_report_name)
+        
+    # 3. 若上傳多個 XML 檔案，將個別報表打包為 ZIP 壓縮包
+    if len(generated_individual_reports) > 1:
+        zip_name = f"ICP_Audit_Reports_Individual_{timestamp}.zip"
+        zip_path = job_path / zip_name
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for rep_name in generated_individual_reports:
+                rep_file = job_path / rep_name
+                if rep_file.exists():
+                    zipf.write(rep_file, arcname=rep_name)
+                    
     mod_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     job_info["is_running"] = False
+    job_info["progress"] = 100
     job_info["last_completed_at"] = mod_time
-    job_info["last_report"] = report_name
+    summary_filename = merged_report_name if len(xml_files) <= 1 else f"合併總表 + {len(generated_individual_reports)} 份個別報表"
+    job_info["last_report"] = summary_filename
     job_info["records"] = results
-    job_info["stats"] = calculate_stats(results, report_name, mod_time)
+    
+    stats = calculate_stats(results, summary_filename, mod_time)
+    stats["report_count"] = len(xml_files)
+    stats["merged_report"] = merged_report_name
+    stats["individual_reports"] = generated_individual_reports
+    job_info["stats"] = stats
 
 @app.post("/api/audit/run")
 async def trigger_audit(background_tasks: BackgroundTasks, job_id: str = Query(...)):
@@ -484,7 +509,7 @@ async def get_audit_results(job_id: Optional[str] = Query(None)):
     if "records" not in job_info:
         # 試圖讀取 job 目錄下最新產出的 excel
         job_path = get_job_dir(job_id)
-        reports = list(job_path.glob("ICP_Audit_Report_*.xlsx"))
+        reports = list(job_path.glob("ICP_Audit_Report_Consolidated_*.xlsx")) or list(job_path.glob("ICP_Audit_Report_*.xlsx"))
         if reports:
             reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
             latest_file = reports[0]
@@ -503,14 +528,39 @@ async def get_audit_results(job_id: Optional[str] = Query(None)):
     }
 
 @app.get("/api/reports/download")
-async def download_report(job_id: str = Query(...)):
+async def download_report(job_id: str = Query(...), mode: str = Query("merged")):
     job_path = get_job_dir(job_id)
-    reports = list(job_path.glob("ICP_Audit_Report_*.xlsx"))
-    if not reports:
-        raise HTTPException(status_code=404, detail="找不到該任務的審計報表檔案")
-    reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
-    file_path = reports[0]
-    return FileResponse(path=file_path, filename=file_path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    
+    # 模式一：匯出各檔案個別獨立 Excel (ZIP 壓縮包)
+    if mode in ["individual", "zip", "split"]:
+        zip_files = list(job_path.glob("ICP_Audit_Reports_Individual_*.zip")) or list(job_path.glob("ICP_Audit_Reports_*.zip"))
+        if zip_files:
+            zip_files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            return FileResponse(path=zip_files[0], filename=zip_files[0].name, media_type="application/zip")
+            
+        indiv_reports = [r for r in job_path.glob("ICP_Audit_Report_*.xlsx") if "Consolidated" not in r.name]
+        if indiv_reports:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            zip_path = job_path / f"ICP_Audit_Reports_Individual_{timestamp}.zip"
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for rep in indiv_reports:
+                    zipf.write(rep, arcname=rep.name)
+            return FileResponse(path=zip_path, filename=zip_path.name, media_type="application/zip")
+            
+    # 模式二：匯出全檔案合併總表 (Consolidated / Merged Excel)
+    merged_reports = list(job_path.glob("ICP_Audit_Report_Consolidated_*.xlsx"))
+    if merged_reports:
+        merged_reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        file_path = merged_reports[0]
+        return FileResponse(path=file_path, filename=file_path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+    all_reports = list(job_path.glob("ICP_Audit_Report_*.xlsx"))
+    if all_reports:
+        all_reports.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+        file_path = all_reports[0]
+        return FileResponse(path=file_path, filename=file_path.name, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+    raise HTTPException(status_code=404, detail="找不到該任務的審計報表檔案")
 
 @app.get("/api/reports/download_html")
 async def download_html_report(job_id: str = Query(...)):
