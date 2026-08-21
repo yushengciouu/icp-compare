@@ -154,7 +154,7 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
                 </div>
                 <div class="risk-tag">公司名稱：{rec.get("公司名稱比對", "—")} ｜ 地址比對：{rec.get("地址比對", "—")}</div>
                 <div class="reasoning">
-                    <strong>LLM 專家模型 Chain-of-Thought (CoT) 推理分析：</strong>
+                    <strong>專家模型審計推理理由：</strong>
                     <p>{rec.get('LLM分析推理理由', '—')}</p>
                 </div>
             </div>

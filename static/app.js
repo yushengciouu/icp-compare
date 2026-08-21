@@ -242,7 +242,7 @@ function createCardElement(rec, index) {
 
         <div class="reasoning-box">
             <div class="reasoning-header">
-                <i data-lucide="brain-circuit"></i> LLM 專家模型 Chain-of-Thought (CoT) 審計推理理由：
+                <i data-lucide="brain-circuit"></i> 專家模型審計推理理由：
             </div>
             <div class="reasoning-body">${escapeHtml(reasoning)}</div>
         </div>
