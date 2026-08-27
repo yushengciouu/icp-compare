@@ -19,7 +19,7 @@ import pandas as pd
 from apscheduler.schedulers.background import BackgroundScheduler
 
 # 匯入現有的審計核心模組
-from compare_audit import parse_xml_file, get_llm_judgment, generate_formatted_excel_report
+from compare_audit import parse_xml_file, group_xml_files, parse_batch_records, get_llm_judgment, generate_formatted_excel_report
 
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
@@ -115,10 +115,12 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
         for idx, rec in enumerate(records, 1):
             level = str(rec.get("LLM研判等級", "")).strip()
             badge_class = "badge-high" if level == "High" else "badge-medium" if level == "Medium" else "badge-low"
-            badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟡 Low (低風險/可放行)"
+            badge_label = "🔴 High (同一實體/轉運風險)" if level == "High" else "🟠 Medium (關聯企業)" if level == "Medium" else "🟢 Low (低風險/可放行)"
             
             search_text = (
                 str(rec.get("查詢名稱", "")) +
+                str(rec.get("客戶代號", "")) +
+                str(rec.get("內部黑名單標記", "")) +
                 str(rec.get("黑名單名稱", "")) +
                 str(rec.get("條件ID", "")) +
                 str(rec.get("黑名單ID", "")) +
@@ -140,6 +142,8 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
                     <div class="box">
                         <h4>查詢實體 (Condition)</h4>
                         <p><strong>條件ID:</strong> {rec.get('條件ID', '—')}</p>
+                        <p><strong>客戶代號:</strong> {rec.get('客戶代號', '—')}</p>
+                        <p><strong>內部黑名單:</strong> {rec.get('內部黑名單標記', '—')}</p>
                         <p><strong>名稱:</strong> {rec.get('查詢名稱', '—')}</p>
                         <p><strong>國家/城市:</strong> {rec.get('查詢國家', '—')} / {rec.get('查詢城市', '—')}</p>
                         <p><strong>地址:</strong> {rec.get('查詢地址', '—')}</p>
@@ -218,84 +222,118 @@ def generate_html_report(records: List[Dict[str, Any]], stats: Dict[str, Any], o
         .tab-btn {{ background: rgba(30,41,59,0.6); color: #94A3B8; border: 1px solid rgba(255,255,255,0.1); padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 500; transition: all 0.2s; }}
         .tab-btn:hover {{ background: rgba(51,65,85,0.8); color: #FFF; }}
         .tab-btn.active {{ background: #3B82F6; color: #FFF; border-color: #60A5FA; font-weight: 600; box-shadow: 0 0 12px rgba(59,130,246,0.4); }}
-        .tab-btn.tab-high.active {{ background: #EF4444; border-color: #F87171; box-shadow: 0 0 12px rgba(239,68,68,0.4); }}
-        .tab-btn.tab-medium.active {{ background: #F59E0B; border-color: #FBBF24; box-shadow: 0 0 12px rgba(245,158,11,0.4); }}
-        .tab-btn.tab-low.active {{ background: #EAB308; border-color: #FDE047; box-shadow: 0 0 12px rgba(234,179,8,0.4); }}
-        .tab-btn.tab-fp.active {{ background: #10B981; border-color: #34D399; box-shadow: 0 0 12px rgba(16,185,129,0.4); }}
-        .search-box input {{ background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.15); color: #FFF; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; width: 280px; outline: none; transition: all 0.2s; }}
-        .search-box input:focus {{ border-color: #3B82F6; box-shadow: 0 0 8px rgba(59,130,246,0.3); }}
+        .search-box {{ position: relative; min-width: 280px; }}
+        .search-input {{ width: 100%; padding: 8px 16px; background: rgba(30,41,59,0.7); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; color: #FFF; font-size: 0.88rem; outline: none; box-sizing: border-box; }}
+        .search-input:focus {{ border-color: #3B82F6; box-shadow: 0 0 10px rgba(59,130,246,0.3); }}
+
+        .cards {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 20px; }}
+        .card {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }}
+        .card-header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.08); }}
+        .case-title {{ font-size: 1.05rem; font-weight: 600; color: #E2E8F0; line-height: 1.4; }}
+        .pct {{ display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 0.78rem; font-weight: 700; background: rgba(255,255,255,0.08); color: #94A3B8; margin-right: 6px; }}
+        .badge {{ display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; font-weight: 600; }}
+        .badge-high {{ background: rgba(239,68,68,0.2); color: #EF4444; border: 1px solid rgba(239,68,68,0.4); }}
+        .badge-medium {{ background: rgba(245,158,11,0.2); color: #F59E0B; border: 1px solid rgba(245,158,11,0.4); }}
+        .badge-low {{ background: rgba(16,185,129,0.2); color: #10B981; border: 1px solid rgba(16,185,129,0.4); }}
         
-        .card {{ background: rgba(20,27,44,0.65); border: 1px solid rgba(255,255,255,0.08); padding: 20px; border-radius: 12px; margin-bottom: 20px; transition: all 0.2s; }}
-        .card-header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px; }}
-        .case-title {{ font-size: 1.1rem; font-weight: 700; color: #FFF; }}
-        .badge {{ padding: 4px 10px; border-radius: 12px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; }}
-        .badge-high {{ background: rgba(239, 68, 68, 0.15); color: #EF4444; border: 1px solid #EF4444; }}
-        .badge-medium {{ background: rgba(245, 158, 11, 0.15); color: #F59E0B; border: 1px solid #F59E0B; }}
-        .badge-low {{ background: rgba(234, 179, 8, 0.15); color: #EAB308; }}
-        .badge-fp {{ background: rgba(16, 185, 129, 0.15); color: #10B981; border: 1px solid #10B981; }}
-        .pct {{ background: rgba(255,255,255,0.1); padding: 3px 8px; border-radius: 4px; font-size: 0.8rem; margin-right: 8px; }}
-        .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 14px; }}
-        .box {{ background: rgba(15,23,42,0.5); padding: 14px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; }}
-        .box h4 {{ margin: 0 0 10px 0; color: #14B8A6; font-size: 0.9rem; }}
-        .box p {{ margin: 4px 0; }}
-        .risk-tag {{ background: rgba(245,158,11,0.15); color: #F59E0B; border: 1px solid rgba(245,158,11,0.3); padding: 4px 10px; border-radius: 6px; font-size: 0.8rem; margin-bottom: 14px; display: inline-block; }}
-        .reasoning {{ background: rgba(30,41,59,0.5); border-left: 4px solid #3B82F6; padding: 14px; border-radius: 6px; font-size: 0.85rem; }}
-        .reasoning strong {{ color: #60A5FA; display: block; margin-bottom: 6px; }}
-        @media print {{ body {{ background: #FFF; color: #000; }} .filter-section {{ display: none; }} .card {{ page-break-inside: avoid; border: 1px solid #CCC; color: #000; background: #FFF; display: block !important; }} .box {{ background: #F8FAFC; color: #000; }} .reasoning {{ background: #EFF6FF; color: #000; }} }}
+        .grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }}
+        .box {{ background: rgba(30,41,59,0.4); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.04); }}
+        .box h4 {{ margin: 0 0 8px 0; font-size: 0.82rem; color: #38BDF8; text-transform: uppercase; letter-spacing: 0.5px; }}
+        .box p {{ margin: 4px 0; font-size: 0.82rem; color: #CBD5E1; line-height: 1.4; word-break: break-word; }}
+        
+        .risk-tag {{ background: rgba(255,255,255,0.04); padding: 8px 12px; border-radius: 6px; font-size: 0.8rem; color: #94A3B8; margin-bottom: 12px; border-left: 3px solid #3B82F6; }}
+        .reasoning {{ background: rgba(15,23,42,0.6); padding: 12px; border-radius: 8px; font-size: 0.84rem; border: 1px solid rgba(255,255,255,0.06); }}
+        .reasoning strong {{ color: #F8FAFC; font-size: 0.82rem; }}
+        .reasoning p {{ margin: 6px 0 0 0; color: #CBD5E1; line-height: 1.5; }}
+        .empty-state {{ text-align: center; padding: 48px 20px; grid-column: 1 / -1; }}
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>🛡️ ICP-Compare 出口合規審計報告 (HTML 視覺化獨立版)</h1>
-        <p style="margin: 6px 0 0 0; color: #94A3B8; font-size: 0.85rem;">生成時間: {stats.get('last_updated', '')} | 報告檔名: {stats.get('file_name', '')}</p>
+        <h1>ICP-Compare 出口實體合規審計報告</h1>
+        <p style="margin: 4px 0 0 0; color: #94A3B8; font-size: 0.85rem;">報告產生時間: {stats.get('last_updated', '')} ｜ 資料來源: {stats.get('file_name', '')}</p>
     </div>
     
     <div class="kpis">
-        <div class="kpi"><span>總掃描對數</span><h2>{stats.get('total', 0)}</h2></div>
-        <div class="{high_kpi_class}"><span>🔴 High 高風險</span><h2 style="color: #EF4444;">{high_count}</h2></div>
-        <div class="{medium_kpi_class}"><span>🟠 Medium 關聯企業</span><h2 style="color: #F59E0B;">{medium_count}</h2></div>
-        <div class="kpi"><span>🟡 Low 低風險/可放行</span><h2 style="color: #10B981;">{stats.get('low', 0)}</h2></div>
+        <div class="kpi">
+            <span>總比對案件數</span>
+            <h2>{stats.get('total', 0)}</h2>
+        </div>
+        <div class="{high_kpi_class}">
+            <span style="color: #F87171;">🔴 High 高風險 (攔截)</span>
+            <h2 style="color: #EF4444;">{stats.get('high', 0)}</h2>
+        </div>
+        <div class="{medium_kpi_class}">
+            <span style="color: #FBBF24;">🟠 Medium 關聯企業 (二審)</span>
+            <h2 style="color: #F59E0B;">{stats.get('medium', 0)}</h2>
+        </div>
+        <div class="kpi">
+            <span style="color: #34D399;">🟢 Low 低風險 (可放行)</span>
+            <h2 style="color: #10B981;">{stats.get('low', 0)}</h2>
+        </div>
     </div>
-    
-    <section class="filter-section">
+
+    <div class="filter-section">
         <div class="tabs-group">
-            <button class="tab-btn active" onclick="selectTab(this, 'ALL')">全部案件 ({stats.get('total', 0)})</button>
-            <button class="tab-btn tab-high" onclick="selectTab(this, 'High')">🔴 High 高風險 ({stats.get('high', 0)})</button>
-            <button class="tab-btn tab-medium" onclick="selectTab(this, 'Medium')">🟠 Medium 關聯企業 ({stats.get('medium', 0)})</button>
-            <button class="tab-btn tab-low" onclick="selectTab(this, 'Low')">🟡 Low 低風險/可放行 ({stats.get('low', 0)})</button>
+            <button class="tab-btn active" onclick="filterCards('ALL')">全部案件 ({stats.get('total', 0)})</button>
+            <button class="tab-btn" onclick="filterCards('High')">🔴 High 高風險 ({stats.get('high', 0)})</button>
+            <button class="tab-btn" onclick="filterCards('Medium')">🟠 Medium 關聯企業 ({stats.get('medium', 0)})</button>
+            <button class="tab-btn" onclick="filterCards('Low')">🟢 Low 低風險 ({stats.get('low', 0)})</button>
         </div>
         <div class="search-box">
-            <input type="text" id="search-input" placeholder="搜尋實體名稱、條件 ID、地址或國家..." oninput="filterCards()">
+            <input type="text" class="search-input" id="search-box" placeholder="搜尋實體名稱、代號、地址..." oninput="handleSearch()">
         </div>
-    </section>
+    </div>
 
-    <div class="cards" id="cards-container">
+    <div class="cards" id="cards-wrapper">
         {cards_html}
     </div>
 
     <script>
         let currentFilter = 'ALL';
-        function selectTab(btn, filter) {{
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            currentFilter = filter;
-            filterCards();
+        let currentSearch = '';
+
+        function filterCards(level) {{
+            currentFilter = level;
+            document.querySelectorAll('.tab-btn').forEach(btn => {{
+                if (btn.innerText.includes(level) || (level === 'ALL' && btn.innerText.includes('全部'))) {{
+                    btn.classList.add('active');
+                }} else {{
+                    btn.classList.remove('active');
+                }}
+            }});
+            applyFilterAndSearch();
         }}
-        function filterCards() {{
-            const query = (document.getElementById('search-input').value || '').toLowerCase().trim();
+
+        function handleSearch() {{
+            currentSearch = document.getElementById('search-box').value.trim().toLowerCase();
+            applyFilterAndSearch();
+        }}
+
+        function applyFilterAndSearch() {{
             const cards = document.querySelectorAll('.card');
+            let visibleCount = 0;
             cards.forEach(card => {{
-                const level = card.getAttribute('data-level') || '';
-                const text = card.getAttribute('data-search') || '';
+                const level = card.getAttribute('data-level');
+                const searchData = card.getAttribute('data-search') || '';
+                
                 const matchesFilter = (currentFilter === 'ALL') || (level === currentFilter);
-                const matchesSearch = !query || text.includes(query);
-                card.style.display = (matchesFilter && matchesSearch) ? 'block' : 'none';
+                const matchesSearch = !currentSearch || searchData.includes(currentSearch);
+                
+                if (matchesFilter && matchesSearch) {{
+                    card.style.display = 'block';
+                    visibleCount++;
+                }} else {{
+                    card.style.display = 'none';
+                }}
             }});
         }}
     </script>
 </body>
-</html>"""
-    output_path.write_text(html_content, encoding="utf-8")
+</html>
+"""
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(html_content)
 
 @app.get("/", response_class=HTMLResponse)
 async def serve_index():
@@ -362,15 +400,12 @@ def run_background_job_audit(job_id: str):
     job_path = get_job_dir(job_id)
     upload_dir = job_path / "uploads"
     
-    xml_files = glob.glob(str(upload_dir / "*_raw.xml"))
-    if not xml_files:
-        xml_files = glob.glob(str(upload_dir / "*.xml"))
+    xml_files = glob.glob(str(upload_dir / "*.xml"))
+    batches = group_xml_files(xml_files)
         
     all_pairs = []
-    for xml_file in xml_files:
-        pairs = parse_xml_file(xml_file)
-        for p in pairs:
-            p["source_file"] = os.path.basename(xml_file)
+    for bkey, bdata in batches.items():
+        pairs = parse_batch_records(bkey, bdata)
         all_pairs.extend(pairs)
         
     job_info["total"] = len(all_pairs)
@@ -390,6 +425,8 @@ def run_background_job_audit(job_id: str):
                 row = {
                     "來源檔案": pair.get("source_file", ""),
                     "條件ID": pair.get("condition_id", ""),
+                    "客戶代號": pair.get("customer_no", "—") if pair.get("customer_no") else "—",
+                    "內部黑名單標記": pair.get("is_blacklisted", "—") if pair.get("is_blacklisted") else "—",
                     "查詢名稱": pair.get("query_name", ""),
                     "查詢國家": pair.get("query_country", ""),
                     "查詢城市": pair.get("query_city", ""),
@@ -413,7 +450,7 @@ def run_background_job_audit(job_id: str):
     # 1. 產出「全檔案合併總 Excel 報表」 (Consolidated Report)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     columns = [
-        "來源檔案", "條件ID", "查詢名稱", "查詢國家", "查詢城市", "查詢地址",
+        "來源檔案", "條件ID", "客戶代號", "內部黑名單標記", "查詢名稱", "查詢國家", "查詢城市", "查詢地址",
         "黑名單ID", "黑名單名稱", "黑名單地址", "黑名單完整資訊",
         "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對", "LLM分析推理理由"
     ]
@@ -426,7 +463,7 @@ def run_background_job_audit(job_id: str):
         df_merged.to_excel(merged_excel_path, sheet_name="全審計結果清單", index=False)
         generate_formatted_excel_report(str(merged_excel_path))
     else:
-        source_names = ", ".join(os.path.basename(f) for f in xml_files) if xml_files else "—"
+        source_names = ", ".join(batches.keys()) if batches else "—"
         pass_row = {col: "—" for col in columns}
         pass_row["來源檔案"] = source_names
         pass_row["LLM研判等級"] = "Pass (合格)"
@@ -434,24 +471,22 @@ def run_background_job_audit(job_id: str):
         df_merged = pd.DataFrame([pass_row])
         df_merged.to_excel(merged_excel_path, sheet_name="全審計結果清單", index=False)
 
-    # 2. 針對每一個上傳的 XML 檔案，個別產出專屬獨立 Excel 報表
+    # 2. 針對每一個業務批次 (batch_key)，個別產出專屬獨立 Excel 報表 (同批次之分段 Part 1/2 自動合流)
     generated_individual_reports = []
-    for xml_path_str in xml_files:
-        xml_fname = os.path.basename(xml_path_str)
-        stem = Path(xml_fname).stem.replace("_raw", "")
-        file_report_name = f"ICP_Audit_Report_{stem}_{timestamp}.xlsx"
+    for bkey in batches.keys():
+        file_report_name = f"ICP_Audit_Report_{bkey}_{timestamp}.xlsx"
         output_excel = job_path / file_report_name
         
-        file_results = [r for r in results if r.get("來源檔案") == xml_fname]
+        file_results = [r for r in results if r.get("來源檔案") == bkey]
         if file_results:
             df = pd.DataFrame(file_results)
             df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
             generate_formatted_excel_report(str(output_excel))
         else:
             pass_row = {col: "—" for col in columns}
-            pass_row["來源檔案"] = xml_fname
+            pass_row["來源檔案"] = bkey
             pass_row["LLM研判等級"] = "Pass (合格)"
-            pass_row["LLM分析推理理由"] = f"全數合格：本檔案 ({xml_fname}) 上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
+            pass_row["LLM分析推理理由"] = f"全數合格：本批次 ({bkey}) 上傳之 XML 報文無任何命中率 >= 75% 之限制實體紀錄。"
             df = pd.DataFrame([pass_row])
             df.to_excel(output_excel, sheet_name="全審計結果清單", index=False)
             

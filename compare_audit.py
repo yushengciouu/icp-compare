@@ -108,10 +108,19 @@ def build_reading_sheet(ws, records):
         ws.row_dimensions[row].height = 26
         row += 1
 
+        # 來源與業務標籤列 (來源檔案 / 客戶代號 / 內部黑名單標記)
         ws[f"A{row}"] = "來源檔案"
-        merge_write(ws, f"B{row}:H{row}", s(rec.get("來源檔案")))
-        style_cell(ws[f"A{row}"], fill=COLORS["pale_gray"], size=11, bold=True)
-        style_range(ws, f"B{row}:H{row}", fill=COLORS["white"], color=COLORS["muted"], size=9)
+        merge_write(ws, f"B{row}:D{row}", s(rec.get("來源檔案")))
+        ws[f"E{row}"] = "客戶代號"
+        ws[f"F{row}"] = s(rec.get("客戶代號"))
+        ws[f"G{row}"] = "內部黑名單"
+        ws[f"H{row}"] = s(rec.get("內部黑名單標記"))
+
+        for c in (f"A{row}", f"E{row}", f"G{row}"):
+            style_cell(ws[c], fill=COLORS["pale_gray"], size=9, bold=True)
+        style_range(ws, f"B{row}:D{row}", fill=COLORS["white"], color=COLORS["muted"], size=9)
+        style_cell(ws[f"F{row}"], fill=COLORS["white"], color=COLORS["muted"], size=9, horizontal="center")
+        style_cell(ws[f"H{row}"], fill=COLORS["white"], color=COLORS["muted"], size=9, horizontal="center")
         ws.row_dimensions[row].height = 28
         row += 1
 
@@ -218,7 +227,7 @@ def build_detail_sheet(ws, headers, records):
     style_range(ws, f"A2:{last_col}{last_row}", color=COLORS["text"], size=10, vertical="top")
 
     wide = {"來源檔案", "查詢名稱", "查詢地址", "黑名單名稱", "黑名單地址", "黑名單完整資訊", "LLM分析推理理由"}
-    narrow = {"條件ID", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對"}
+    narrow = {"條件ID", "客戶代號", "內部黑名單標記", "查詢國家", "查詢城市", "黑名單ID", "原XML命中率", "LLM研判等級", "公司名稱比對", "地址比對"}
     for i, header in enumerate(headers, 1):
         letter = get_column_letter(i)
         ws.column_dimensions[letter].width = 38 if header in wide else 16 if header in narrow else 20
@@ -275,67 +284,201 @@ def clean_text(text):
         return ""
     return str(text).strip()
 
+def group_xml_files(file_paths):
+    """
+    依檔名正則規則將 XML 檔案分組為不同業務批次 (batch_key)。
+    支援:
+      - ICP-..._raw_request.xml / ICP-..._raw_response.xml
+      - 分段傳送: ICP-..._raw_request2.xml / ICP-..._raw_response2.xml
+      - 舊格式: ICP-..._raw.xml 或純 .xml
+    """
+    batches = {}
+    pattern = re.compile(r'^(?P<prefix>.+?)(?:_raw)?_(?P<type>request|response)(?P<part>\d*)\.xml$', re.I)
+    
+    for fpath in file_paths:
+        fname = os.path.basename(fpath)
+        m = pattern.match(fname)
+        if m:
+            batch_key = m.group('prefix')
+            ftype = m.group('type').lower()
+            part_str = m.group('part')
+            part_num = int(part_str) if part_str else 1
+            
+            if batch_key not in batches:
+                batches[batch_key] = {'requests': [], 'responses': [], 'legacies': []}
+            batches[batch_key][ftype + 's'].append((part_num, fpath))
+        else:
+            batch_key = os.path.splitext(fname)[0].replace('_raw', '')
+            if batch_key not in batches:
+                batches[batch_key] = {'requests': [], 'responses': [], 'legacies': []}
+            batches[batch_key]['legacies'].append(fpath)
+            
+    for b in batches.values():
+        b['requests'].sort(key=lambda x: x[0])
+        b['responses'].sort(key=lambda x: x[0])
+        
+    return batches
+
+def parse_batch_records(batch_key, batch_data):
+    """
+    解析單一業務批次的 XML 檔案：
+    1. 讀取同批次所有 Request 檔案，建立 ConditionId -> {CustomerNo, IsBlacklisted} 索引字典
+    2. 讀取同批次所有 Response 檔案，提取命中率 >= 75% 的結果並補回 Request 的標籤資訊
+    3. 相容舊版 Legacy XML 檔案
+    """
+    req_lookup = {}
+    for part_num, req_file in batch_data.get('requests', []):
+        try:
+            with open(req_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            soup = BeautifulSoup(content, 'xml')
+            conditions = soup.find_all('Condition')
+            for cond in conditions:
+                cid_node = cond.find('ConditionId')
+                if not cid_node:
+                    continue
+                cid = clean_text(cid_node.text)
+                if cid:
+                    cno_node = cond.find('CustomerNo')
+                    is_bl_node = cond.find('IsBlacklisted')
+                    orig_name_node = cond.find('OriginalName')
+                    req_lookup[cid] = {
+                        'customer_no': clean_text(cno_node.text if cno_node else ""),
+                        'is_blacklisted': clean_text(is_bl_node.text if is_bl_node else ""),
+                        'original_name': clean_text(orig_name_node.text if orig_name_node else "")
+                    }
+        except Exception as e:
+            print(f"[WARN] 解析 Request 檔案失敗 ({req_file}): {e}")
+
+    matched_pairs = []
+
+    # 解析 Response 檔案
+    for part_num, resp_file in batch_data.get('responses', []):
+        try:
+            with open(resp_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            soup = BeautifulSoup(content, 'xml')
+            results = soup.find_all('Result')
+            for r in results:
+                condition = r.find('Condition')
+                if not condition:
+                    continue
+
+                condition_id = clean_text(condition.find('ConditionId').text if condition.find('ConditionId') else "")
+                query_name = clean_text(condition.find('QueryName').text if condition.find('QueryName') else "")
+                country = clean_text(condition.find('Country').text if condition.find('Country') else "")
+                city = clean_text(condition.find('City').text if condition.find('City') else "")
+                address = clean_text(condition.find('Address').text if condition.find('Address') else "")
+
+                req_info = req_lookup.get(condition_id, {})
+
+                parties = r.find_all('Party')
+                for p in parties:
+                    group_id_node = p.find(re.compile('^groupid$', re.I))
+                    percentage_node = p.find(re.compile('^percentage$', re.I))
+                    name_node = p.find(re.compile('^name$', re.I))
+                    addr_node = p.find(re.compile('^address$', re.I))
+                    content_node = p.find(re.compile('^content$', re.I))
+
+                    group_id = clean_text(group_id_node.text if group_id_node else "")
+                    pct_str = clean_text(percentage_node.text if percentage_node else "0")
+                    party_name = clean_text(name_node.text if name_node else "")
+                    party_address = clean_text(addr_node.text if addr_node else "")
+                    party_content = clean_text(content_node.text if content_node else "")
+
+                    try:
+                        percentage = float(pct_str)
+                    except ValueError:
+                        percentage = 0.0
+
+                    if percentage >= 75.0:
+                        matched_pairs.append({
+                            "batch_key": batch_key,
+                            "condition_id": condition_id,
+                            "customer_no": req_info.get("customer_no", ""),
+                            "is_blacklisted": req_info.get("is_blacklisted", ""),
+                            "query_name": query_name,
+                            "query_country": country,
+                            "query_city": city,
+                            "query_address": address,
+                            "party_id": group_id,
+                            "party_name": party_name,
+                            "party_address": party_address,
+                            "party_content": party_content,
+                            "xml_percentage": percentage,
+                            "source_file": batch_key
+                        })
+        except Exception as e:
+            print(f"[WARN] 解析 Response 檔案失敗 ({resp_file}): {e}")
+
+    # 相容舊版 Legacy XML
+    for leg_file in batch_data.get('legacies', []):
+        try:
+            with open(leg_file, 'r', encoding='utf-8', errors='ignore') as f:
+                content = f.read()
+            soup = BeautifulSoup(content, 'xml')
+            results = soup.find_all('Result')
+            for r in results:
+                condition = r.find('Condition')
+                if not condition:
+                    continue
+
+                condition_id = clean_text(condition.find('ConditionId').text if condition.find('ConditionId') else "")
+                query_name = clean_text(condition.find('QueryName').text if condition.find('QueryName') else "")
+                country = clean_text(condition.find('Country').text if condition.find('Country') else "")
+                city = clean_text(condition.find('City').text if condition.find('City') else "")
+                address = clean_text(condition.find('Address').text if condition.find('Address') else "")
+
+                parties = r.find_all('Party')
+                for p in parties:
+                    group_id_node = p.find(re.compile('^groupid$', re.I))
+                    percentage_node = p.find(re.compile('^percentage$', re.I))
+                    name_node = p.find(re.compile('^name$', re.I))
+                    addr_node = p.find(re.compile('^address$', re.I))
+                    content_node = p.find(re.compile('^content$', re.I))
+
+                    group_id = clean_text(group_id_node.text if group_id_node else "")
+                    pct_str = clean_text(percentage_node.text if percentage_node else "0")
+                    party_name = clean_text(name_node.text if name_node else "")
+                    party_address = clean_text(addr_node.text if addr_node else "")
+                    party_content = clean_text(content_node.text if content_node else "")
+
+                    try:
+                        percentage = float(pct_str)
+                    except ValueError:
+                        percentage = 0.0
+
+                    if percentage >= 75.0:
+                        matched_pairs.append({
+                            "batch_key": batch_key,
+                            "condition_id": condition_id,
+                            "customer_no": "",
+                            "is_blacklisted": "",
+                            "query_name": query_name,
+                            "query_country": country,
+                            "query_city": city,
+                            "query_address": address,
+                            "party_id": group_id,
+                            "party_name": party_name,
+                            "party_address": party_address,
+                            "party_content": party_content,
+                            "xml_percentage": percentage,
+                            "source_file": os.path.basename(leg_file)
+                        })
+        except Exception as e:
+            print(f"[WARN] 解析 Legacy XML 檔案失敗 ({leg_file}): {e}")
+
+    return matched_pairs
+
 def parse_xml_file(xml_path):
     """
-    解析 XML 檔案，過濾出 percentage >= 75.0% 的所有 Result 對照紀錄。
+    單檔解析（相容舊介面），自動呼叫分組與解析邏輯。
     """
-    print(f"正在讀取並解析 XML 檔案: {os.path.basename(xml_path)}...")
-    with open(xml_path, 'r', encoding='utf-8', errors='ignore') as f:
-        content = f.read()
-    
-    soup = BeautifulSoup(content, 'xml')
-    results = soup.find_all('Result')
-    
-    matched_pairs = []
-    
-    for r in results:
-        condition = r.find('Condition')
-        if not condition:
-            continue
-            
-        condition_id = clean_text(condition.find('ConditionId').text if condition.find('ConditionId') else "")
-        query_name = clean_text(condition.find('QueryName').text if condition.find('QueryName') else "")
-        country = clean_text(condition.find('Country').text if condition.find('Country') else "")
-        city = clean_text(condition.find('City').text if condition.find('City') else "")
-        address = clean_text(condition.find('Address').text if condition.find('Address') else "")
-        
-        # 尋找底下的所有 Party 節點
-        parties = r.find_all('Party')
-        for p in parties:
-            # 兼容大小寫 groupid / Groupid 等
-            group_id_node = p.find(re.compile('^groupid$', re.I))
-            percentage_node = p.find(re.compile('^percentage$', re.I))
-            name_node = p.find(re.compile('^name$', re.I))
-            addr_node = p.find(re.compile('^address$', re.I))
-            content_node = p.find(re.compile('^content$', re.I))
-            
-            group_id = clean_text(group_id_node.text if group_id_node else "")
-            pct_str = clean_text(percentage_node.text if percentage_node else "0")
-            party_name = clean_text(name_node.text if name_node else "")
-            party_address = clean_text(addr_node.text if addr_node else "")
-            party_content = clean_text(content_node.text if content_node else "")
-            
-            try:
-                percentage = float(pct_str)
-            except ValueError:
-                percentage = 0.0
-                
-            # 只篩選出命中率 >= 75% 的
-            if percentage >= 75.0:
-                matched_pairs.append({
-                    "condition_id": condition_id,
-                    "query_name": query_name,
-                    "query_country": country,
-                    "query_city": city,
-                    "query_address": address,
-                    "party_id": group_id,
-                    "party_name": party_name,
-                    "party_address": party_address,
-                    "party_content": party_content,
-                    "xml_percentage": percentage
-                })
-                
-    return matched_pairs
+    batches = group_xml_files([xml_path])
+    all_pairs = []
+    for bkey, bdata in batches.items():
+        all_pairs.extend(parse_batch_records(bkey, bdata))
+    return all_pairs
 
 def determine_match_level(name_match_raw, address_match_raw):
     """
@@ -486,17 +629,19 @@ def process_single_pair(pair, idx, total_count):
     address_match = judgment.get("address_match", "完全不同")
 
     item = {
-        "來源檔案": pair["source_file"],
-        "條件ID": pair["condition_id"],
-        "查詢名稱": pair["query_name"],
-        "查詢國家": pair["query_country"],
-        "查詢城市": pair["query_city"],
-        "查詢地址": pair["query_address"],
-        "黑名單ID": pair["party_id"],
-        "黑名單名稱": pair["party_name"],
-        "黑名單地址": pair["party_address"],
-        "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair["party_content"]) > 500 else pair["party_content"],
-        "原XML命中率": f"{pair['xml_percentage']}%",
+        "來源檔案": pair.get("source_file", ""),
+        "條件ID": pair.get("condition_id", ""),
+        "客戶代號": pair.get("customer_no", "—") if pair.get("customer_no") else "—",
+        "內部黑名單標記": pair.get("is_blacklisted", "—") if pair.get("is_blacklisted") else "—",
+        "查詢名稱": pair.get("query_name", ""),
+        "查詢國家": pair.get("query_country", ""),
+        "查詢城市": pair.get("query_city", ""),
+        "查詢地址": pair.get("query_address", ""),
+        "黑名單ID": pair.get("party_id", ""),
+        "黑名單名稱": pair.get("party_name", ""),
+        "黑名單地址": pair.get("party_address", ""),
+        "黑名單完整資訊": pair["party_content"][:500] + "..." if len(pair.get("party_content", "")) > 500 else pair.get("party_content", ""),
+        "原XML命中率": f"{pair.get('xml_percentage', 0.0)}%",
         "LLM研判等級": match_level,
         "公司名稱比對": name_match,
         "地址比對": address_match,
@@ -505,19 +650,18 @@ def process_single_pair(pair, idx, total_count):
     return item
 
 def main():
-    xml_files = glob.glob("testfile/*_raw.xml")
+    xml_files = glob.glob("testfile/new/*.xml") or glob.glob("testfile/*_raw.xml")
     if not xml_files:
-        print("在 testfile/ 目錄下找不到任何以 _raw.xml 結尾的檔案！")
+        print("在 testfile/ 目錄下找不到任何 XML 檔案！")
         return
         
-    print(f"找到 {len(xml_files)} 個 raw XML 檔案。開始進行高風險（>=75%）名單提取...")
+    print(f"找到 {len(xml_files)} 個 XML 檔案。正在進行業務批次分組與高風險（>=75%）名單提取...")
+    batches = group_xml_files(xml_files)
+    print(f"成功識別出 {len(batches)} 個業務批次。")
     
     all_pairs = []
-    for xml_path in xml_files:
-        pairs = parse_xml_file(xml_path)
-        file_name = os.path.basename(xml_path)
-        for p in pairs:
-            p["source_file"] = file_name
+    for bkey, bdata in batches.items():
+        pairs = parse_batch_records(bkey, bdata)
         all_pairs.extend(pairs)
         
     total_count = len(all_pairs)

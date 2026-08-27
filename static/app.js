@@ -145,6 +145,8 @@ function renderCards() {
 
         const searchText = (
             String(rec["查詢名稱"] || "") +
+            String(rec["客戶代號"] || "") +
+            String(rec["內部黑名單標記"] || "") +
             String(rec["黑名單名稱"] || "") +
             String(rec["條件ID"] || "") +
             String(rec["黑名單ID"] || "") +
@@ -189,7 +191,7 @@ function getBadgeLabel(level) {
     switch (level) {
         case "High": return "🔴 High (同一實體/轉運風險)";
         case "Medium": return "🟠 Medium (關聯企業)";
-        case "Low": return "🟡 Low (低風險/可放行)";
+        case "Low": return "🟢 Low (低風險/可放行)";
         default: return level;
     }
 }
@@ -202,6 +204,8 @@ function createCardElement(rec, index) {
     const queryName = rec["查詢名稱"] || "—";
     const watchName = rec["黑名單名稱"] || "—";
     const conditionId = rec["條件ID"] || "—";
+    const customerNo = rec["客戶代號"] || "—";
+    const isBlacklisted = rec["內部黑名單標記"] || "—";
     const partyId = rec["黑名單ID"] || "—";
     const pct = rec["原XML命中率"] || "—";
     const nameMatch = rec["公司名稱比對"] || "—";
@@ -224,6 +228,8 @@ function createCardElement(rec, index) {
             <div class="entity-box">
                 <h4><i data-lucide="user-search"></i> 查詢實體 (Condition)</h4>
                 <div class="info-row"><strong>條件ID:</strong> ${escapeHtml(conditionId)}</div>
+                <div class="info-row"><strong>客戶代號:</strong> ${escapeHtml(customerNo)}</div>
+                <div class="info-row"><strong>內部黑名單:</strong> ${escapeHtml(isBlacklisted)}</div>
                 <div class="info-row"><strong>名稱:</strong> ${escapeHtml(queryName)}</div>
                 <div class="info-row"><strong>國家/城市:</strong> ${escapeHtml(rec["查詢國家"] || "—")} / ${escapeHtml(rec["查詢城市"] || "—")}</div>
                 <div class="info-row"><strong>地址:</strong> ${escapeHtml(rec["查詢地址"] || "—")}</div>
