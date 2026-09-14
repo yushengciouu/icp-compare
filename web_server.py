@@ -20,6 +20,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 
 # 匯入現有的審計核心模組
 from compare_audit import parse_xml_file, group_xml_files, parse_batch_records, get_llm_judgment, generate_formatted_excel_report
+from audit_service import router as audit_api_router
 
 BASE_DIR = Path(__file__).parent.resolve()
 STATIC_DIR = BASE_DIR / "static"
@@ -70,6 +71,30 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ICP-Compare Web 戰略出口合規審計平台 (Multi-User Job Isolation)", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+app.include_router(audit_api_router)
+
+# 修復 FastAPI / Swagger UI 對多檔案上傳 (OpenAPI 3.1) 的相容性問題，確保顯示檔案選取按鈕
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    for s in schema.get("components", {}).get("schemas", {}).values():
+        for p in s.get("properties", {}).values():
+            if p.get("type") == "array" and p.get("items", {}).get("contentMediaType") == "application/octet-stream":
+                p["items"] = {"type": "string", "format": "binary"}
+            elif p.get("contentMediaType") == "application/octet-stream":
+                p["format"] = "binary"
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # 多任務動態狀態字典: job_id -> { is_running, progress, total, completed, last_report, records, stats }
 JOBS_REGISTRY: Dict[str, Dict[str, Any]] = {}
