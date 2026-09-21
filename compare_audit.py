@@ -17,7 +17,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 
 # 1. 初始化 OpenAI 客戶端，連接您的本地 vLLM (gemma-4:31B)
 client = OpenAI(
-    base_url="http://192.168.39.143:8002/v1",
+    base_url="http://192.168.39.143:8001/v1",
     api_key="empty_api_key_for_vllm"
 )
 
