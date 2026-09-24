@@ -2,7 +2,7 @@ import urllib.request
 import urllib.error
 import json
 
-base_url = "http://192.168.39.143:8001/v1"
+base_url = "http://192.168.39.143:8002/v1"
 
 print("Step 1: Testing /v1/models endpoint...")
 try:
